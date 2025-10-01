@@ -2,7 +2,11 @@
 import { NextResponse } from "next/server";
 import { getStore, Point } from "../_store";
 
+/** ==== Vercel runtime & cache hints ==== */
+export const runtime = "nodejs";                  // hindari Edge utk in-memory store
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const preferredRegion = ["sin1"];          // dekat Indonesia (Singapore)
 
 /** Parse "YYYY-MM-DD HH:mm:ss" (lokal) → Date UTC sesuai offset menit. */
 function parseWithOffset(mysqlLocal: string | null, offMin: number): Date | null {
@@ -17,69 +21,100 @@ function parseWithOffset(mysqlLocal: string | null, offMin: number): Date | null
   return new Date(utcMs - offMin * 60 * 1000);
 }
 
+/** Normalisasi ID sensor: angka -> huruf (1->A), huruf -> huruf uppercase. */
+function toLetter(raw: string | number | null | undefined): string {
+  const s = String(raw ?? "").trim();
+  const asNum = Number(s);
+  if (!Number.isNaN(asNum) && asNum > 0 && asNum < 27) return String.fromCharCode(64 + asNum); // 1->A
+  const m = s.match(/[A-Za-z]$/);
+  return (m ? m[0] : s || "A").toUpperCase();
+}
+const sensorSort = (a: string, b: string) => a.localeCompare(b, "en");
+
+/** GET: ringkas & robust */
 export async function GET(req: Request) {
   try {
     const STORE: Point[] = getStore();
     const url = new URL(req.url);
     const q = url.searchParams;
 
+    // --- Filter device ---
     const deviceId = q.get("device_id") || q.get("uid") || undefined;
 
-    // sensor_id numeric → addr A/B/C; juga dukung ?addr=A
+    // --- Filter sensor (addr) ---
     const id2addr: Record<string, string> = { "1": "A", "2": "B", "3": "C" };
-    const onlyAddr =
-      (q.get("addr") as string | null) ??
+    const askedAddr =
+      q.get("addr")?.toUpperCase() ||
       (q.get("sensor_id") ? id2addr[q.get("sensor_id") as string] : undefined);
 
-    const tzOff = Number(q.get("tzOffsetMinutes") || "0"); // contoh WIB = 420
-    const from =
-      parseWithOffset(q.get("from") || q.get("start"), tzOff) ??
-      new Date(Date.now() - 60 * 60 * 1000);
-    const to =
-      parseWithOffset(q.get("to") || q.get("end"), tzOff) ?? new Date();
+    // --- Waktu + grace window ---
+    const tzOff = Number(q.get("tzOffsetMinutes") || "0");   // WIB=420
+    const graceSec = Math.min(Math.max(Number(q.get("graceSec") || "10"), 0), 60); // 0..60s
+    const now = new Date();
 
-    // Filter & clamp
+    let from =
+      parseWithOffset(q.get("from") || q.get("start"), tzOff) ??
+      new Date(now.getTime() - 60 * 60 * 1000); // default 1 jam
+    let to =
+      parseWithOffset(q.get("to") || q.get("end"), tzOff) ??
+      now; // default sekarang
+
+    // longgarkan sedikit ke belakang supaya data telat tetap masuk
+    from = new Date(from.getTime() - graceSec * 1000);
+
+    // jaga agar to > from
+    if (+to <= +from) to = new Date(from.getTime() + 1000);
+
+    // --- Filter & clamp ---
     const matched = STORE.filter((p) => {
       if (deviceId && p.uid !== deviceId) return false;
-      if (onlyAddr && p.addr !== onlyAddr) return false;
+      if (askedAddr && p.addr.toUpperCase() !== askedAddr.toUpperCase()) return false;
       const t = new Date(p.timestamp); // ISO UTC saat POST
       return t >= from && t < to;
     });
 
-    // Kelompokkan per addr
-    const grouped = new Map<
-      string,
-      { name: string; rows: { timestamp: string; temperature: number }[] }
-    >();
+    // --- Kelompokkan per addr ---
+    const grouped = new Map<string, { name: string; rows: { timestamp: string; temperature: number }[] }>();
     for (const r of matched) {
-      if (!grouped.has(r.addr)) grouped.set(r.addr, { name: `Wadah ${r.addr}`, rows: [] });
-      grouped.get(r.addr)!.rows.push({ timestamp: r.timestamp, temperature: r.temperature });
+      const addr = toLetter(r.addr);
+      if (!grouped.has(addr)) grouped.set(addr, { name: `Wadah ${addr}`, rows: [] });
+      grouped.get(addr)!.rows.push({
+        timestamp: r.timestamp,
+        temperature: r.temperature,
+      });
     }
 
-    const series = Array.from(grouped.entries()).map(([addr, s]) => ({
-      id: addr,
-      name: s.name,
-      rows: s.rows.sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp)),
-    }));
+    // --- Susun series: urut A, B, C, ... ---
+    const series = Array.from(grouped.entries())
+      .sort((a, b) => sensorSort(a[0], b[0]))
+      .map(([addr, s]) => ({
+        id: addr,
+        name: s.name,
+        rows: s.rows.sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp)),
+      }));
 
-    // Selalu kirim rows juga:
-    // - kalau user minta addr tertentu → rows untuk addr itu
-    // - kalau tidak, tapi hanya ada 1 seri → rows seri pertama
-    // - kalau banyak seri → rows = [] (biar FE mode All abaikan)
+    // --- rows tunggal (untuk FE mode single) ---
     let rows: { timestamp: string; temperature: number }[] = [];
-    if (onlyAddr) {
-      rows = series.find(s => s.id === onlyAddr)?.rows ?? [];
+    if (askedAddr) {
+      rows = series.find((s) => s.id === askedAddr.toUpperCase())?.rows ?? [];
     } else if (series.length === 1) {
       rows = series[0].rows;
     }
 
-    return NextResponse.json({ series, rows }, { status: 200 });
+    return NextResponse.json(
+      { series, rows, from: from.toISOString(), to: to.toISOString() },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
   } catch (err) {
     console.error("[GET /api/measurements] error:", err);
-    return NextResponse.json({ series: [], rows: [] }, { status: 200 });
+    return NextResponse.json(
+      { series: [], rows: [] },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }
 
+/** POST: simpan ke ring-buffer in-memory */
 export async function POST(req: Request) {
   try {
     // Opsional kunci sederhana
@@ -92,6 +127,7 @@ export async function POST(req: Request) {
     }
 
     const { uid, addr, temperature, humidity } = await req.json();
+
     if (!uid || !addr || typeof temperature !== "number" || isNaN(temperature)) {
       return NextResponse.json({ ok: false, error: "bad payload" }, { status: 400 });
     }
@@ -101,7 +137,7 @@ export async function POST(req: Request) {
 
     STORE.push({
       uid: String(uid),
-      addr: String(addr),
+      addr: toLetter(addr),                // simpan sebagai huruf konsisten
       temperature: Number(temperature),
       humidity,
       timestamp: nowISO,
@@ -111,9 +147,15 @@ export async function POST(req: Request) {
     const MAX = 10_000;
     if (STORE.length > MAX) STORE.splice(0, STORE.length - MAX);
 
-    return NextResponse.json({ ok: true, at: nowISO }, { status: 200 });
+    return NextResponse.json(
+      { ok: true, at: nowISO },
+      { status: 200, headers: { "Cache-Control": "no-store" } }
+    );
   } catch (err) {
     console.error("[POST /api/measurements] error:", err);
-    return NextResponse.json({ ok: false, error: "bad payload" }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "bad payload" },
+      { status: 400, headers: { "Cache-Control": "no-store" } }
+    );
   }
 }
