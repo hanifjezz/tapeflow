@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Tapeflow</title>
+  <title>Tapeflow — Monitoring</title>
 
   <link rel="icon" href="/assets/tapeflow2.png" />
   <!-- Styles -->
@@ -95,6 +95,11 @@
       <div class="chartwrap">
         <canvas id="tempChart"></canvas>
       </div>
+    </div>
+
+    <!-- Empty state (muncul saat tidak ada data) -->
+    <div id="empty-state" class="panel" style="display:none; margin-top:12px; text-align:center; opacity:.75">
+      Tidak ada data pada rentang yang dipilih.
     </div>
 
     <!-- Tabel -->
