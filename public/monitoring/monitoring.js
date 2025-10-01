@@ -1,27 +1,18 @@
 /* =========================================================
    Tapeflow Monitoring — Production-ready (Vercel)
-   - API base ke origin: /api (bisa ganti ke URL publik)
-   - Fallback jika /devices dan /sensors tidak tersedia
-   - Anti-race: loadSeq
-   - Hard clamp data by [from, to)
-   - No-cache fetch
 ========================================================= */
 'use strict';
 
-/* =======================
-   KONFIG
-======================= */
-const API               = window.__API_BASE || '/api'; // ganti ke 'https://api-kamu.domain' bila backend terpisah
-const TZ_OFFSET_MINUTES = 420;  // WIB (+7)
+/* ======================= KONFIG ======================= */
+const API               = window.__API_BASE || '/api';
+const TZ_OFFSET_MINUTES = 420;  // WIB
 const POLL_MS           = 5000;
 const TABLE_LIMIT       = 500;
 const THRESH            = { low: 25, high: 35 };
 const PALETTE           = ['#4da3ff', '#8b6cff', '#18a0aa', '#ff5a5f', '#eab308'];
 const WIB_TZ            = 'Asia/Jakarta';
 
-/* =======================
-   STATE
-======================= */
+/* ======================= STATE ======================= */
 let chart, gradient;
 let poller = null;
 let sensorCache = [];          // {id, name}[]
@@ -32,9 +23,7 @@ let activePreset   = '1h';     // '1m'|'1h'|'1d'|'2d'
 let activeDateRange = null;    // {from:Date, to:Date} | null
 let loadSeq = 0;               // guard anti-race
 
-/* =======================
-   DOM
-======================= */
+/* ======================= DOM ======================= */
 const deviceSelect = document.getElementById('deviceSelect');
 const btnRefresh   = document.getElementById('btnRefresh');
 const sensorChips  = document.getElementById('sensorChips');
@@ -49,9 +38,15 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.lucide) window.lucide.createIcons();
 });
 
-/* =======================
-   UTIL WAKTU (WIB)
-======================= */
+/* ======================= UTIL ======================= */
+const normId = (v) => {
+  if (v === undefined || v === null) return '';
+  const s = String(v).trim();
+  // kalau “Wadah A/B” pernah dipakai sebagai id mentah, ambil huruf/angka terakhir
+  const m = s.match(/([A-Za-z]|\d+)$/);
+  return (m ? m[1] : s).toUpperCase();
+};
+
 function toMySQLLocal(dt){
   const p = n => String(n).padStart(2,'0');
   return `${dt.getFullYear()}-${p(dt.getMonth()+1)}-${p(dt.getDate())} ${p(dt.getHours())}:${p(dt.getMinutes())}:${p(dt.getSeconds())}`;
@@ -69,8 +64,6 @@ function fmtWIB(ts, withTime=true){
   };
   return new Intl.DateTimeFormat('id-ID', opt).format(new Date(ts)) + (withTime ? ' WIB' : '');
 }
-
-/* Label sumbu-X TANPA “WIB” */
 function fmtAxisNoWIB(ts, unit='minute'){
   const d = new Date(ts);
   const base = unit === 'second'
@@ -81,17 +74,13 @@ function fmtAxisNoWIB(ts, unit='minute'){
   return new Intl.DateTimeFormat('id-ID', { ...base, hour12:false, timeZone:WIB_TZ }).format(d);
 }
 
-/* =======================
-   EMPTY STATE UI
-======================= */
+/* =================== EMPTY STATE UI =================== */
 function showEmptyState(on){
-  const el = document.getElementById('empty-state'); // opsional
+  const el = document.getElementById('empty-state');
   if (el) el.style.display = on ? 'flex' : 'none';
 }
 
-/* =======================
-   STATISTIK
-======================= */
+/* ======================= STAT ======================= */
 function stats(rows){
   if (!rows || !rows.length) return { now:'—', min:'—', avg:'—', max:'—' };
   const ys = rows.map(r => Number(r.temperature ?? r.y)).filter(n => !isNaN(n));
@@ -117,9 +106,7 @@ function applyStats(s){
   }
 }
 
-/* =======================
-   CHART
-======================= */
+/* ======================= CHART ======================= */
 function ensureChart(){
   if (chart) return;
   const canvas = document.getElementById('tempChart');
@@ -141,17 +128,9 @@ function ensureChart(){
       scales: {
         x: {
           type: 'time',
-          time: {
-            unit:'minute',
-            stepSize: 2,
-            displayFormats: { second:'HH:mm:ss', minute:'HH:mm', hour:'HH' }
-          },
+          time: { unit:'minute', stepSize: 2, displayFormats: { second:'HH:mm:ss', minute:'HH:mm', hour:'HH' } },
           bounds: 'ticks',
-          ticks: {
-            maxRotation: 0,
-            autoSkip: true,
-            callback: (v) => fmtAxisNoWIB(v, chart?.options?.scales?.x?.time?.unit ?? 'minute')
-          },
+          ticks: { maxRotation: 0, autoSkip: true, callback: (v) => fmtAxisNoWIB(v, chart?.options?.scales?.x?.time?.unit ?? 'minute') },
           distribution: 'linear'
         },
         y: { beginAtZero:false, suggestedMin:24, suggestedMax:36 }
@@ -161,9 +140,7 @@ function ensureChart(){
   });
 }
 
-/* =======================
-   RANGE / PRESET
-======================= */
+/* ======================= RANGE ======================= */
 function computeRangeAnchored(){
   const now = new Date();
 
@@ -171,7 +148,6 @@ function computeRangeAnchored(){
     const from = activeDateRange.from;
     const to   = activeDateRange.to;
     const spanSec = Math.max(1, Math.round((to - from)/1000));
-
     let intervalSec, unit, step;
     if (spanSec <= 3600)         { intervalSec = 2;    unit='second'; step=2; }
     else if (spanSec <= 6*3600)  { intervalSec = 120;  unit='minute'; step=2; }
@@ -181,7 +157,6 @@ function computeRangeAnchored(){
   }
 
   const m0 = startOfMinute(now);
-
   if (activePreset === '1m'){
     const to = new Date(m0.getTime() + 60*1000);
     const from = new Date(to.getTime() - 60*1000);
@@ -193,8 +168,7 @@ function computeRangeAnchored(){
     return { from, to, intervalSec:120, unit:'minute', step:2 };
   }
   if (activePreset === '1d'){
-    const start = startOfDay(now);
-    const from = start;
+    const from = startOfDay(now);
     const to   = endOfDayExclusive(now);
     return { from, to, intervalSec:3600, unit:'hour', step:1 };
   }
@@ -204,34 +178,27 @@ function computeRangeAnchored(){
     const to   = new Date(start); to.setDate(to.getDate()+1);
     return { from, to, intervalSec:3600, unit:'hour', step:1 };
   }
-
   const to = endExclusive(m0);
   const from = new Date(to.getTime() - 60*60*1000);
   return { from, to, intervalSec:120, unit:'minute', step:2 };
 }
 
-/* =======================
-   DEVICES / SENSORS (dengan fallback)
-======================= */
+/* ========== DEVICES / SENSORS (dengan fallback) ========== */
 async function safeJSON(res){
   const text = await res.text();
   try { return JSON.parse(text); } catch { return {}; }
 }
-
-// Urutkan "Wadah A", "Wadah B", ...; lalu ID angka 1,2,3...
-function sensorSort(a, b) {
-  const A = String(a.id ?? a.name ?? '').toUpperCase();
-  const B = String(b.id ?? b.name ?? '').toUpperCase();
-
+const sensorSort = (a, b) => {
+  const A = normId(a.id ?? a.name);
+  const B = normId(b.id ?? b.name);
   const isLetter = v => /^[A-Z]$/.test(v);
   const isNumber = v => /^\d+$/.test(v);
-
   if (isLetter(A) && isLetter(B)) return A.localeCompare(B); // A,B,C...
   if (isNumber(A) && isNumber(B)) return Number(A) - Number(B);
-  if (isLetter(A) && isNumber(B)) return -1; // huruf dulu, baru angka
+  if (isLetter(A) && isNumber(B)) return -1;
   if (isNumber(A) && isLetter(B)) return 1;
   return (a.name || '').localeCompare(b.name || '');
-}
+};
 
 async function loadDevices(){
   if (!deviceSelect) return;
@@ -260,10 +227,8 @@ async function loadDevices(){
 
 async function loadSensors(){
   if (!sensorChips) return;
-
   let sensors = [];
 
-  // 1) coba endpoint khusus
   if (selectedDevice){
     try{
       const res = await fetch(`${API}/sensors?device_id=${encodeURIComponent(selectedDevice)}`, { cache: 'no-store' });
@@ -274,7 +239,6 @@ async function loadSensors(){
     }catch{}
   }
 
-  // 2) fallback dari /measurements (series)
   if (!sensors.length){
     try{
       const { from, to } = computeRangeAnchored();
@@ -286,10 +250,10 @@ async function loadSensors(){
       if (res.ok){
         const js = await safeJSON(res);
         if (Array.isArray(js.series)) {
-          sensors = js.series.map((s, i) => ({
-            id: String(s.id ?? String.fromCharCode(65 + i)), // A,B,C default
-            name: s.name || `Wadah ${String(s.id ?? String.fromCharCode(65 + i))}`
-          }));
+          sensors = js.series.map((s, i) => {
+            const sid = normId(s.id ?? String.fromCharCode(65 + i));
+            return { id: sid, name: s.name || `Wadah ${sid}` };
+          });
         } else if (Array.isArray(js.rows)) {
           sensors = [{ id: 'A', name: 'Wadah A' }];
         }
@@ -297,31 +261,30 @@ async function loadSensors(){
     }catch{}
   }
 
-  // 3) urutkan A,B,C,... lalu angka
+  sensors.forEach(s => s.id = normId(s.id));
   sensors.sort(sensorSort);
   sensorCache = sensors.slice();
 
-  // 4) render chips (ID disimpan sbg STRING!)
-  const keep = selectedSensor;
+  const keep = normId(selectedSensor);
   sensorChips.innerHTML =
-    `<button class="sensor-pill ${keep === 'all' ? 'active' : ''}" data-sid="all">All</button>` +
-    sensors.map(s => `<button class="sensor-pill ${keep === String(s.id) ? 'active' : ''}" data-sid="${String(s.id)}">${s.name}</button>`).join('');
+    `<button class="sensor-pill ${keep==='ALL'?'active':''}" data-sid="all">All</button>` +
+    sensors.map(s => `<button class="sensor-pill ${keep===normId(s.id)?'active':''}" data-sid="${normId(s.id)}">${s.name}</button>`).join('');
 
-  sensorChips.querySelectorAll('.sensor-pill').forEach(btn => {
-    btn.addEventListener('click', () => {
-      sensorChips.querySelectorAll('.sensor-pill').forEach(b => b.classList.remove('active'));
+  sensorChips.querySelectorAll('.sensor-pill').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      sensorChips.querySelectorAll('.sensor-pill').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
-      selectedSensor = btn.dataset.sid === 'all' ? 'all' : String(btn.dataset.sid);
+      const sid = btn.dataset.sid || 'all';
+      selectedSensor = sid === 'all' ? 'all' : normId(sid);
       localStorage.setItem('tapeflow_sensor', selectedSensor);
       loadMeasurements();
     });
   });
 
-  // 5) restore pilihan
   const saved = localStorage.getItem('tapeflow_sensor');
-  if (saved && (saved === 'all' || sensors.some(s => String(s.id) === saved))) {
-    selectedSensor = saved;
-    sensorChips.querySelector(`[data-sid="${saved}"]`)?.classList.add('active');
+  if (saved && (saved.toLowerCase() === 'all' || sensors.some(s => normId(s.id) === normId(saved)))) {
+    selectedSensor = saved.toLowerCase() === 'all' ? 'all' : normId(saved);
+    sensorChips.querySelector(`[data-sid="${selectedSensor}"]`)?.classList.add('active');
   } else {
     selectedSensor = 'all';
     sensorChips.querySelector(`[data-sid="all"]`)?.classList.add('active');
@@ -329,9 +292,7 @@ async function loadSensors(){
   }
 }
 
-/* =======================
-   HELPER CLAMP
-======================= */
+/* ======================= CLAMP ======================= */
 function clampRows(rows, from, to){
   return (rows || [])
     .map(r => ({
@@ -343,24 +304,20 @@ function clampRows(rows, from, to){
     .sort((a,b) => a.x - b.x);
 }
 
-/* =======================
-   LOAD DATA (anti-race + no-fallback + hard clamp)
-======================= */
+/* ======================= LOAD ======================= */
 async function loadMeasurements(){
   ensureChart();
   if (!chart) return;
 
-  const mySeq = ++loadSeq; // token batch ini
+  const mySeq = ++loadSeq;
   const { from, to, intervalSec, unit, step } = computeRangeAnchored();
 
-  // kunci domain X & format
   chart.options.scales.x.time.unit = unit;
   chart.options.scales.x.time.stepSize = step;
   chart.options.scales.x.time.displayFormats = { second:'HH:mm:ss', minute:'HH:mm', hour:'HH' };
   chart.options.scales.x.min = from.getTime();
   chart.options.scales.x.max = to.getTime();
 
-  // susun query (kompat: from/to & start/end)
   const qs = new URLSearchParams({
     tzOffsetMinutes: String(TZ_OFFSET_MINUTES),
     interval: String(intervalSec),
@@ -371,7 +328,7 @@ async function loadMeasurements(){
 
   try{
     const res = await fetch(`${API}/measurements?${qs}`, { cache: 'no-store' });
-    if (mySeq !== loadSeq) return; // abaikan hasil usang
+    if (mySeq !== loadSeq) return;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const js = await safeJSON(res);
 
@@ -379,22 +336,17 @@ async function loadMeasurements(){
     let tableRows = [];
 
     if (Array.isArray(js.series)) {
-      // urutkan series agar konsisten (A,B,C,... lalu angka)
-      const sortedSeries = js.series.slice().sort((a, b) => {
-        return sensorSort(
-          { id: String(a.id ?? ''), name: a.name },
-          { id: String(b.id ?? ''), name: b.name }
-        );
-      });
+      const sortedSeries = js.series.slice().sort((a, b) =>
+        sensorSort({ id: normId(a.id), name: a.name }, { id: normId(b.id), name: b.name })
+      );
 
-      // filter sesuai chip
       const usedSeries = sortedSeries.filter((s, idx) => {
-        const sid = String(s.id ?? String.fromCharCode(65 + idx)); // 'A','B',...
-        return selectedSensor === 'all' || selectedSensor === sid;
+        const sid = normId(s.id ?? String.fromCharCode(65 + idx));
+        return selectedSensor === 'all' || normId(selectedSensor) === sid;
       });
 
       usedSeries.forEach((s, idx) => {
-        const sid = String(s.id ?? String.fromCharCode(65 + idx));
+        const sid = normId(s.id ?? String.fromCharCode(65 + idx));
         const label = s.name || `Wadah ${sid}`;
         const raw = (s.rows || [])
           .map(r => ({ x:new Date(r.timestamp), y:r.temperature==null?null:Number(r.temperature), name: label }))
@@ -451,7 +403,6 @@ async function loadMeasurements(){
 
     chart.data.datasets = datasets;
 
-    // scale Y dinamis termasuk threshold
     const allY = datasets.flatMap(d => d.data.map(p => p.y).filter(v => v != null));
     if (allY.length) {
       chart.options.scales.y.suggestedMin = Math.floor(Math.min(...allY, THRESH.low) - 1);
@@ -460,10 +411,8 @@ async function loadMeasurements(){
     chart.update();
     showEmptyState(false);
 
-    // Statistik
     applyStats(stats(tableRows.map(r => ({ temperature:r.temperature }))));
 
-    // Tabel (DESC)
     tableRows.sort((a,b)=> b.timestamp - a.timestamp);
     const view = tableRows.slice(0, TABLE_LIMIT);
     if (tbody){
@@ -489,21 +438,17 @@ async function loadMeasurements(){
   }
 }
 
-/* =======================
-   POLLING
-======================= */
+/* ======================= POLLING ======================= */
 function startPolling(){
   stopPolling();
-  if (activeDateRange) return; // mode tanggal: polling off
+  if (activeDateRange) return;
   poller = setInterval(() => {
     if (!activeDateRange) loadMeasurements();
   }, POLL_MS);
 }
 function stopPolling(){ if (poller){ clearInterval(poller); poller = null; } }
 
-/* =======================
-   DATE PICKER — Inline Modal (center)
-======================= */
+/* ========== DATE PICKER (modal inline, center) ========== */
 (function setupInlineCalendarModal(){
   const wrapBtn   = document.getElementById('dateWrap');
   const labelEl   = document.getElementById('dateLabel');
@@ -512,7 +457,6 @@ function stopPolling(){ if (poller){ clearInterval(poller); poller = null; } }
   const btnApply  = document.getElementById('tfDateApply');
   const btnCancel = document.getElementById('tfDateCancel');
   const btnClose  = document.getElementById('tfDateClose');
-
   if (!wrapBtn || !labelEl || !modal || !host) return;
 
   function setDateLabel(from, to){
@@ -592,7 +536,7 @@ function stopPolling(){ if (poller){ clearInterval(poller); poller = null; } }
     resetDateLabel();
     closeModal();
     window.startPolling?.();
-    loadMeasurements(); // kembali ke preset aktif
+    loadMeasurements();
   }
   btnCancel?.addEventListener('click', cancelSelection);
   btnClose ?.addEventListener('click', cancelSelection);
@@ -602,9 +546,7 @@ function stopPolling(){ if (poller){ clearInterval(poller); poller = null; } }
   window.__resetDateLabel = resetDateLabel;
 })();
 
-/* =======================
-   EXPORT PDF
-======================= */
+/* ======================= EXPORT PDF ======================= */
 function setupExportPDF(){
   const btn = document.getElementById('btnExport');
   if (!btn) return;
@@ -612,11 +554,7 @@ function setupExportPDF(){
   btn.addEventListener('click', () => {
     const jspdfNS = window.jspdf || {};
     const jsPDF = jspdfNS.jsPDF || window.jsPDF;
-    if (!jsPDF) {
-      console.error('[ExportPDF] jsPDF belum termuat');
-      alert('Gagal membuat PDF: jsPDF belum termuat.');
-      return;
-    }
+    if (!jsPDF) { alert('Gagal membuat PDF: jsPDF belum termuat.'); return; }
 
     const doc = new jsPDF({ unit:'pt', format:'a4' });
     doc.setFont('helvetica','bold'); doc.setFontSize(16);
@@ -629,7 +567,7 @@ function setupExportPDF(){
     })();
     const sensorText = (function(){
       if (selectedSensor === 'all') return 'All sensors';
-      const s = (sensorCache || []).find(x => String(x.id) === String(selectedSensor));
+      const s = (sensorCache || []).find(x => normId(x.id) === normId(selectedSensor));
       return s ? s.name : `Sensor ${selectedSensor}`;
     })();
 
@@ -658,36 +596,20 @@ function setupExportPDF(){
       doc.addImage(imgData, 'PNG', 40, 120, imgW, imgH);
 
       const startY = 120 + imgH + 24;
-
       const rows = [...document.querySelectorAll('#tbody tr')].slice(0,100).map(tr=>{
         const tds = tr.querySelectorAll('td');
         return [ tds[0]?.innerText ?? '', tds[1]?.innerText ?? '', tds[2]?.innerText ?? '' ];
       });
-
       if (rows.length) {
         if (doc.autoTable) {
-          doc.autoTable({
-            startY,
-            head: [['#','Waktu (WIB)','Suhu (°C)']],
-            body: rows,
-            theme: 'grid',
-            styles: { fontSize: 9, cellPadding: 3 },
-            headStyles: { fillColor: [35,42,64], textColor: 255 }
-          });
+          doc.autoTable({ startY, head: [['#','Waktu (WIB)','Suhu (°C)']], body: rows, theme: 'grid',
+            styles: { fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [35,42,64], textColor: 255 } });
         } else if ((window.jspdf||{}).autoTable) {
-          (window.jspdf).autoTable(doc, {
-            startY,
-            head: [['#','Waktu (WIB)','Suhu (°C)']],
-            body: rows,
-            theme: 'grid',
-            styles: { fontSize: 9, cellPadding: 3 },
-            headStyles: { fillColor: [35,42,64], textColor: 255 }
-          });
+          (window.jspdf).autoTable(doc, { startY, head: [['#','Waktu (WIB)','Suhu (°C)']], body: rows, theme: 'grid',
+            styles: { fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [35,42,64], textColor: 255 } });
         }
       }
-    } catch(e){
-      console.warn('[ExportPDF] gagal render canvas:', e);
-    }
+    } catch(e){}
 
     const dev = deviceSelect?.value ?? 'device';
     const sens = selectedSensor==='all' ? 'all' : `s${selectedSensor}`;
@@ -695,18 +617,13 @@ function setupExportPDF(){
   });
 }
 
-/* =======================
-   INIT
-======================= */
+/* ======================= INIT ======================= */
 (async function init(){
   await loadDevices();
 
   if (deviceSelect){
     const saved = localStorage.getItem('tapeflow_device');
-    if (saved) {
-      selectedDevice = saved;
-      deviceSelect.value = saved;
-    }
+    if (saved) { selectedDevice = saved; deviceSelect.value = saved; }
     deviceSelect.addEventListener('change', async () => {
       selectedDevice = deviceSelect.value || null;
       localStorage.setItem('tapeflow_device', selectedDevice ?? '');
@@ -717,20 +634,18 @@ function setupExportPDF(){
 
   await loadSensors();
 
-  // tombol preset (1m/1h/1d/2d)
   document.querySelectorAll('.ranges .pill[data-preset]').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.ranges .pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       activePreset = btn.dataset.preset;
-      activeDateRange = null;        // keluar dari mode tanggal
-      window.__resetDateLabel?.();   // reset label hh/bb/tttt
+      activeDateRange = null;
+      window.__resetDateLabel?.();
       startPolling();
       loadMeasurements();
     });
   });
 
-  // refresh manual
   btnRefresh?.addEventListener('click', async () => {
     await loadSensors();
     await loadMeasurements();
@@ -739,5 +654,5 @@ function setupExportPDF(){
   document.querySelector(`.ranges .pill[data-preset="${activePreset}"]`)?.classList.add('active');
   await loadMeasurements();
   startPolling();
-  setupExportPDF();   // aktifkan Export PDF
+  setupExportPDF();
 })();
