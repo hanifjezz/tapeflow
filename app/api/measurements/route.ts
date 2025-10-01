@@ -4,19 +4,15 @@ import { getStore, Point } from "../_store";
 
 export const dynamic = "force-dynamic";
 
-/** Parse "YYYY-MM-DD HH:mm:ss" sebagai waktu lokal dengan offset (menjadi UTC Date) */
+/** Parse "YYYY-MM-DD HH:mm:ss" sebagai waktu lokal dengan offset menit (dikembalikan sebagai Date UTC) */
 function parseWithOffset(mysqlLocal: string | null, offMin: number): Date | null {
   if (!mysqlLocal) return null;
-  const m = mysqlLocal.match(
-    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/
-  );
+  const m = mysqlLocal.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
   if (!m) {
-    // fallback ke parser bawaan
     const d = new Date(mysqlLocal);
     return isNaN(+d) ? null : d;
   }
   const [_, Y, M, D, h, mi, s] = m.map(Number);
-  // Buat UTC dari komponen "lokal", lalu geser dengan offset menit
   const utcMs = Date.UTC(Y, M - 1, D, h, mi, s);
   return new Date(utcMs - offMin * 60 * 1000);
 }
@@ -42,35 +38,37 @@ export async function GET(req: Request) {
     const to =
       parseWithOffset(q.get("to") || q.get("end"), tzOff) ?? new Date();
 
-    const rows = STORE.filter((p) => {
+    // Filter data dari store
+    const matched = STORE.filter((p) => {
       if (deviceId && p.uid !== deviceId) return false;
       if (onlyAddr && p.addr !== onlyAddr) return false;
-      const t = new Date(p.timestamp); // ISO UTC disimpan saat POST
+      const t = new Date(p.timestamp); // ISO UTC yang kita simpan saat POST
       return t >= from && t < to;      // clamp [from, to)
     });
 
-    // Kelompokkan per addr untuk FE (series)
+    // Kelompokkan per addr → untuk mode "All"
     const grouped = new Map<
       string,
       { name: string; rows: { timestamp: string; temperature: number }[] }
     >();
-    for (const r of rows) {
-      if (!grouped.has(r.addr))
-        grouped.set(r.addr, { name: `Wadah ${r.addr}`, rows: [] });
-      grouped.get(r.addr)!.rows.push({
-        timestamp: r.timestamp,
-        temperature: r.temperature,
-      });
+    for (const r of matched) {
+      if (!grouped.has(r.addr)) grouped.set(r.addr, { name: `Wadah ${r.addr}`, rows: [] });
+      grouped.get(r.addr)!.rows.push({ timestamp: r.timestamp, temperature: r.temperature });
     }
 
     const series = Array.from(grouped.entries()).map(([addr, s]) => ({
       id: addr,
       name: s.name,
-      rows: s.rows.sort(
-        (a, b) => +new Date(a.timestamp) - +new Date(b.timestamp)
-      ),
+      rows: s.rows.sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp)),
     }));
 
+    // === Kompat: jika single sensor diminta (onlyAddr terisi) → FE mengharapkan { rows } ===
+    if (onlyAddr) {
+      const rows = series.find(s => s.id === onlyAddr)?.rows ?? series[0]?.rows ?? [];
+      return NextResponse.json({ rows }, { status: 200 });
+    }
+
+    // Default (All) → { series }
     return NextResponse.json({ series }, { status: 200 });
   } catch (err) {
     console.error("[GET /api/measurements] error:", err);
@@ -107,7 +105,7 @@ export async function POST(req: Request) {
       timestamp: nowISO,
     });
 
-    // ring-buffer
+    // Ring buffer
     const MAX = 10_000;
     if (STORE.length > MAX) STORE.splice(0, STORE.length - MAX);
 
