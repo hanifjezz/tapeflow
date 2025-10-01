@@ -1,4 +1,3 @@
-
 /* =========================================================
    Tapeflow Monitoring — Production-ready (Vercel)
    - API base ke origin: /api (bisa ganti ke URL publik)
@@ -25,7 +24,7 @@ const WIB_TZ            = 'Asia/Jakarta';
 ======================= */
 let chart, gradient;
 let poller = null;
-let sensorCache = [];          // {id, name}[]
+let sensorCache = [];          // {id: number, name: string, addr?: 'A'|'B'|'C'}
 let deviceCache = [];          // {id, name, location?}[]
 let selectedSensor = 'all';    // 'all' | number
 let selectedDevice = null;     // device id | null
@@ -194,8 +193,7 @@ function computeRangeAnchored(){
     return { from, to, intervalSec:120, unit:'minute', step:2 };
   }
   if (activePreset === '1d'){
-    const start = startOfDay(now);
-    const from = start;
+    const from = startOfDay(now);
     const to   = endOfDayExclusive(now);
     return { from, to, intervalSec:3600, unit:'hour', step:1 };
   }
@@ -227,7 +225,6 @@ async function loadDevices(){
     const devs = await safeJSON(res);
     deviceCache = Array.isArray(devs) ? devs : (devs.devices || []);
   }catch{
-    // fallback: tanpa devices
     deviceCache = [];
   }
 
@@ -249,13 +246,19 @@ async function loadSensors(){
   if (!sensorChips) return;
 
   // coba endpoint khusus sensors
+  /** target shape: {id:number, name:string, addr?:'A'|'B'|'C'} */
   let sensors = [];
   if (selectedDevice){
     try{
       const res = await fetch(`${API}/sensors?device_id=${encodeURIComponent(selectedDevice)}`, { cache: 'no-store' });
       if (res.ok){
         const js = await safeJSON(res);
-        sensors = Array.isArray(js) ? js : (js.sensors || []);
+        const arr = Array.isArray(js) ? js : (js.sensors || []);
+        sensors = arr.map((s, i) => ({
+          id: Number(s.id ?? (i+1)),
+          name: s.name ?? `Sensor ${i+1}`,
+          addr: s.addr ?? s.code ?? s.label ?? null
+        }));
       }
     }catch{}
   }
@@ -268,14 +271,18 @@ async function loadSensors(){
         from: toMySQLLocal(from), to: toMySQLLocal(to),
         tzOffsetMinutes: String(TZ_OFFSET_MINUTES)
       });
+      if (selectedDevice) qs.set('device_id', String(selectedDevice));
       const res = await fetch(`${API}/measurements?${qs}`, { cache: 'no-store' });
       if (res.ok){
         const js = await safeJSON(res);
-        if (Array.isArray(js.series)) {
-          sensors = js.series.map((s, i) => ({ id: s.id ?? i+1, name: s.name ?? `Sensor ${i+1}` }));
+        if (Array.isArray(js.series) && js.series.length){
+          sensors = js.series.map((s, i) => ({
+            id: i+1,                                 // pakai index konsisten
+            name: s.name ?? `Sensor ${i+1}`,
+            addr: (s.id ?? s.addr ?? null)           // simpan addr untuk filter
+          }));
         } else if (Array.isArray(js.rows)) {
-          // single series => satu sensor
-          sensors = [{ id: 1, name: 'Sensor 1' }];
+          sensors = [{ id: 1, name: 'Sensor 1', addr: null }];
         }
       }
     }catch{}
@@ -324,7 +331,7 @@ function clampRows(rows, from, to){
 }
 
 /* =======================
-   LOAD DATA (anti-race + no-fallback + hard clamp)
+   LOAD DATA (anti-race + hard clamp)
 ======================= */
 async function loadMeasurements(){
   ensureChart();
@@ -340,7 +347,6 @@ async function loadMeasurements(){
   chart.options.scales.x.min = from.getTime();
   chart.options.scales.x.max = to.getTime();
 
-  // susun query (kompat: from/to & start/end)
   const qs = new URLSearchParams({
     tzOffsetMinutes: String(TZ_OFFSET_MINUTES),
     interval: String(intervalSec),
@@ -349,48 +355,70 @@ async function loadMeasurements(){
   });
   if (selectedDevice) qs.set('device_id', String(selectedDevice));
 
+  // jika single sensor, kirim addr supaya API juga bisa balas rows spesifik
+  let sensorAddr = null;
+  if (selectedSensor !== 'all') {
+    const s = sensorCache.find(x => Number(x.id) === Number(selectedSensor));
+    sensorAddr = s?.addr || (selectedSensor===1?'A':selectedSensor===2?'B':selectedSensor===3?'C':null);
+    if (sensorAddr) qs.set('addr', sensorAddr);
+  }
+
   try{
     const res = await fetch(`${API}/measurements?${qs}`, { cache: 'no-store' });
-    if (mySeq !== loadSeq) return; // abaikan hasil usang
+    if (mySeq !== loadSeq) return;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const js = await safeJSON(res);
 
-    // Dua kemungkinan bentuk:
-    // A) {series:[{name?, rows:[{timestamp,temperature}]}]}
-    // B) {rows:[{timestamp,temperature,sensor?}]}
     let datasets = [];
     let tableRows = [];
 
-    if (Array.isArray(js.series)) {
-      // Filter sensor jika perlu
-      const usedSeries = js.series.filter((s, idx) => {
-        const sid = s.id ?? (idx+1);
-        return selectedSensor === 'all' || Number(selectedSensor) === Number(sid);
-      });
+    if (Array.isArray(js.series) && js.series.length) {
+      // filter seri jika user pilih sensor tertentu
+      let usedSeries = js.series;
+      if (selectedSensor !== 'all' && sensorAddr) {
+        usedSeries = usedSeries.filter(s => (s.id ?? s.addr) === sensorAddr);
+      }
 
       usedSeries.forEach((s, idx) => {
-        const raw = (s.rows || []).map(r => ({ x:new Date(r.timestamp), y:r.temperature==null?null:Number(r.temperature), name: s.name ?? `Sensor ${idx+1}` })).sort((a,b)=>a.x-b.x);
+        const raw = (s.rows || [])
+          .map(r => ({ x:new Date(r.timestamp), y:r.temperature==null?null:Number(r.temperature), name: s.name ?? `Sensor ${idx+1}` }))
+          .sort((a,b)=>a.x-b.x);
         const clamped = raw.filter(p => p.x >= from && p.x < to);
+
         datasets.push({
-          label: s.name ?? `Sensor ${idx+1}`,
+          label: s.name ?? (sensorAddr ? `Wadah ${sensorAddr}` : `Sensor ${idx+1}`),
           data: clamped,
           borderColor: PALETTE[idx % PALETTE.length],
-          backgroundColor: selectedSensor==='all' ? 'transparent' : gradient,
+          backgroundColor: (selectedSensor==='all' ? 'transparent' : gradient),
           borderWidth: 2,
           tension: 0.25,
           pointRadius: 0,
           spanGaps: true,
           fill: selectedSensor !== 'all'
         });
+
         tableRows = tableRows.concat(clamped.map(r => ({ timestamp: r.x, temperature: r.y, name: s.name ?? `Sensor ${idx+1}` })));
       });
+
+      // Jika user pilih sensor dan API juga mengirim rows khusus, merge agar pasti ada
+      if (selectedSensor !== 'all' && Array.isArray(js.rows) && js.rows.length && !datasets.length) {
+        const clamped = clampRows(js.rows, from, to);
+        datasets = [{
+          label: `Wadah ${sensorAddr || '-'}`,
+          data: clamped,
+          borderWidth: 2,
+          borderColor: PALETTE[0],
+          backgroundColor: gradient,
+          fill: true,
+          tension: 0.25,
+          pointRadius: 0,
+          spanGaps: true
+        }];
+        tableRows = clamped.map(r => ({ timestamp:r.x, temperature:r.y, name:`Wadah ${sensorAddr||'-'}` }));
+      }
     } else if (Array.isArray(js.rows)) {
-      const raw = js.rows.map(r => ({
-        x:new Date(r.timestamp),
-        y:r.temperature==null?null:Number(r.temperature),
-        name: r.name ?? r.sensor ?? 'Sensor 1'
-      })).sort((a,b)=>a.x-b.x);
-      const clamped = raw.filter(p => p.x >= from && p.x < to);
+      // single rows shape
+      const clamped = clampRows(js.rows, from, to);
       datasets = [{
         label: selectedSensor==='all' ? 'Suhu (°C)' : `Sensor ${selectedSensor}`,
         data: clamped,
@@ -403,10 +431,6 @@ async function loadMeasurements(){
         spanGaps: true
       }];
       tableRows = clamped.map(r => ({ timestamp: r.x, temperature: r.y, name: r.name }));
-    } else {
-      // Bentuk tak dikenal
-      datasets = [];
-      tableRows = [];
     }
 
     const totalPoints = datasets.reduce((n,d)=>n + d.data.length, 0);
@@ -449,11 +473,7 @@ async function loadMeasurements(){
     }
   }catch(err){
     console.error('loadMeasurements failed:', err);
-    // tampilkan kosong agar UI tidak “nyangkut”
-    if (chart){
-      chart.data.datasets = [];
-      chart.update();
-    }
+    if (chart){ chart.data.datasets = []; chart.update(); }
     applyStats({ now:'—', min:'—', avg:'—', max:'—' });
     if (tbody) tbody.innerHTML = `<tr><td colspan="3" class="muted">Gagal memuat data.</td></tr>`;
     showEmptyState(true);

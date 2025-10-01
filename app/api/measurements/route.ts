@@ -4,7 +4,7 @@ import { getStore, Point } from "../_store";
 
 export const dynamic = "force-dynamic";
 
-/** Parse "YYYY-MM-DD HH:mm:ss" (lokal) → Date UTC berdasarkan offset menit. */
+/** Parse "YYYY-MM-DD HH:mm:ss" (lokal) → Date UTC sesuai offset menit. */
 function parseWithOffset(mysqlLocal: string | null, offMin: number): Date | null {
   if (!mysqlLocal) return null;
   const m = mysqlLocal.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
@@ -25,28 +25,28 @@ export async function GET(req: Request) {
 
     const deviceId = q.get("device_id") || q.get("uid") || undefined;
 
-    // sensor_id numeric → addr A/B/C; juga dukung ?addr=A langsung
+    // sensor_id numeric → addr A/B/C; juga dukung ?addr=A
     const id2addr: Record<string, string> = { "1": "A", "2": "B", "3": "C" };
     const onlyAddr =
       (q.get("addr") as string | null) ??
       (q.get("sensor_id") ? id2addr[q.get("sensor_id") as string] : undefined);
 
-    const tzOff = Number(q.get("tzOffsetMinutes") || "0"); // contoh: 420 (WIB)
+    const tzOff = Number(q.get("tzOffsetMinutes") || "0"); // contoh WIB = 420
     const from =
       parseWithOffset(q.get("from") || q.get("start"), tzOff) ??
       new Date(Date.now() - 60 * 60 * 1000);
     const to =
       parseWithOffset(q.get("to") || q.get("end"), tzOff) ?? new Date();
 
-    // Ambil & clamp data
+    // Filter & clamp
     const matched = STORE.filter((p) => {
       if (deviceId && p.uid !== deviceId) return false;
       if (onlyAddr && p.addr !== onlyAddr) return false;
-      const t = new Date(p.timestamp); // ISO UTC yang disimpan saat POST
+      const t = new Date(p.timestamp); // ISO UTC saat POST
       return t >= from && t < to;
     });
 
-    // Kelompokkan per addr (untuk mode "All")
+    // Kelompokkan per addr
     const grouped = new Map<
       string,
       { name: string; rows: { timestamp: string; temperature: number }[] }
@@ -62,14 +62,18 @@ export async function GET(req: Request) {
       rows: s.rows.sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp)),
     }));
 
-    // ==== Kompat FE ====
-    // - Tetap kirim {series} untuk "All"
-    // - Jika single-sensor diminta ATAU hasilnya hanya 1 seri, sertakan juga {rows}
-    const payload: any = { series };
-    if (onlyAddr || series.length === 1) {
-      payload.rows = series[0]?.rows ?? [];
+    // Selalu kirim rows juga:
+    // - kalau user minta addr tertentu → rows untuk addr itu
+    // - kalau tidak, tapi hanya ada 1 seri → rows seri pertama
+    // - kalau banyak seri → rows = [] (biar FE mode All abaikan)
+    let rows: { timestamp: string; temperature: number }[] = [];
+    if (onlyAddr) {
+      rows = series.find(s => s.id === onlyAddr)?.rows ?? [];
+    } else if (series.length === 1) {
+      rows = series[0].rows;
     }
-    return NextResponse.json(payload, { status: 200 });
+
+    return NextResponse.json({ series, rows }, { status: 200 });
   } catch (err) {
     console.error("[GET /api/measurements] error:", err);
     return NextResponse.json({ series: [], rows: [] }, { status: 200 });
@@ -78,7 +82,7 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    // Opsional auth via env
+    // Opsional kunci sederhana
     const token = process.env.MEASUREMENTS_TOKEN;
     if (token) {
       const got = req.headers.get("x-api-key");
@@ -93,7 +97,8 @@ export async function POST(req: Request) {
     }
 
     const STORE: Point[] = getStore();
-    const nowISO = new Date().toISOString(); // simpan sebagai UTC ISO
+    const nowISO = new Date().toISOString(); // simpan UTC ISO
+
     STORE.push({
       uid: String(uid),
       addr: String(addr),
