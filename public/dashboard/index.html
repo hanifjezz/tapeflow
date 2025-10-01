@@ -4,8 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Tapeflow</title>
+
   <link rel="icon" href="/assets/tapeflow2.png" />
-  <link rel="stylesheet" href="dashboard.css" />
+  <link rel="stylesheet" href="/dashboard/dashboard.css" />
   <script src="https://unpkg.com/lucide@latest" defer></script>
 </head>
 <body>
@@ -18,8 +19,8 @@
     <nav>
       <a href="/dashboard/"><i data-lucide="home"></i> Dashboard</a>
       <a href="/monitoring/"><i data-lucide="thermometer"></i> Monitoring</a>
-      <a href="/about/" class="active"><i data-lucide="info"></i> About</a>
-    </nav>    
+      <a href="/about/"><i data-lucide="info"></i> About</a>
+    </nav>
 
     <footer>v1.0</footer>
   </aside>
@@ -67,7 +68,7 @@
         <div class="panel-title">Top 5 Terpanas</div>
         <table>
           <thead><tr><th>Sensor</th><th>Device</th><th>Suhu</th><th>Waktu</th></tr></thead>
-          <tbody id="tbHot"></tbody>
+        <tbody id="tbHot"></tbody>
         </table>
       </div>
       <div class="panel">
@@ -93,15 +94,28 @@
   </main>
 
   <script>
-    // ================= BASE URL API =================
-    const API = "http://localhost:4000";
-    // ================================================
+    // =============== BASE URL API (origin) ===============
+    const API = window.__API_BASE || '/api';
+    // ====================================================
 
-    // lucide icons
-    window.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });
+    // lucide icons + auto-active nav
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) lucide.createIcons();
+      const path = location.pathname.replace(/\/+$/, '') || '/';
+      document.querySelectorAll('.sidebar nav a').forEach(a => {
+        const href = (a.getAttribute('href') || '').replace(/\/+$/, '') || '/';
+        if (href === path) a.classList.add('active'); else a.classList.remove('active');
+      });
+    });
 
     const $ = (sel) => document.querySelector(sel);
-    const fmtTime = (ts) => ts ? new Date(ts).toLocaleString() : "-";
+    const fmtTime = (ts) => ts
+      ? new Intl.DateTimeFormat('id-ID', {
+          timeZone: 'Asia/Jakarta',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+        }).format(new Date(ts)) + ' WIB'
+      : '-';
 
     const badgeStatus = (s) => {
       if (!s) return `<span class="badge">-</span>`;
@@ -109,12 +123,17 @@
       return `<span class="badge ${cls}">${s}</span>`;
     };
 
+    async function safeJSON(res){
+      const t = await res.text();
+      try { return JSON.parse(t); } catch { return {}; }
+    }
+
     async function loadSummary() {
       // Coba summary API dulu
       try {
-        const r = await fetch(`${API}/api/dashboard/summary`);
+        const r = await fetch(`${API}/dashboard/summary`, { cache: 'no-store' });
         if (!r.ok) throw new Error('summary not available');
-        const j = await r.json();
+        const j = await safeJSON(r);
 
         // KPI
         $("#kpiTotal").textContent   = j.totals?.total   ?? "--";
@@ -163,32 +182,31 @@
           </tr>
         `).join("");
 
-        // Sembunyikan fallback cards jika sebelumnya tampil
         $("#fallbackCards").style.display = "none";
         return; // sukses summary, selesai
       } catch (e) {
         // lanjut ke fallback
       }
 
-      // ===== FALLBACK: pakai /api/latest (versi lamamu) =====
+      // ===== FALLBACK: pakai /api/latest (backend lama) =====
       try {
-        const res = await fetch(`${API}/api/latest`);
-        const data = await res.json();
+        const res = await fetch(`${API}/latest`, { cache: 'no-store' });
+        if (!res.ok) throw new Error('latest not available');
+        const data = await safeJSON(res);
 
-        // Hide summary sections (biar tidak kosong) jika backend lama
-        $("#kpiTotal").textContent = data.length;
-        $("#kpiOnline").textContent = "--";
-        $("#kpiAlert").textContent = "--";
+        $("#kpiTotal").textContent   = Array.isArray(data) ? data.length : '--';
+        $("#kpiOnline").textContent  = "--";
+        $("#kpiAlert").textContent   = "--";
         $("#kpiOffline").textContent = "--";
         $("#tbDevice").innerHTML = "";
         $("#tbHot").innerHTML = "";
         $("#tbCold").innerHTML = "";
         $("#tbLatest").innerHTML = "";
 
-        // Tampilkan kartu fallback
+        // Kartu fallback
         const wrap = $("#fallbackCards");
         wrap.style.display = "grid";
-        wrap.innerHTML = data.map(d => {
+        wrap.innerHTML = (Array.isArray(data) ? data : []).map(d => {
           const title = d.sensor_name || d.name || `Device ${d.device_id}`;
           const meta  = d.device_name
             ? (d.location ? `${d.device_name} — ${d.location}` : d.device_name)

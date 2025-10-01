@@ -4,8 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Tapeflow</title>
+
   <link rel="icon" href="/assets/tapeflow2.png" />
-  <link rel="stylesheet" href="about.css" />
+  <link rel="stylesheet" href="/about/about.css" />
   <script src="https://unpkg.com/lucide@latest" defer></script>
 </head>
 <body>
@@ -18,8 +19,8 @@
     <nav>
       <a href="/dashboard/"><i data-lucide="home"></i> Dashboard</a>
       <a href="/monitoring/"><i data-lucide="thermometer"></i> Monitoring</a>
-      <a href="/about/" class="active"><i data-lucide="info"></i> About</a>
-    </nav>    
+      <a href="/about/"><i data-lucide="info"></i> About</a>
+    </nav>
 
     <footer>v1.0</footer>
   </aside>
@@ -58,8 +59,17 @@
   </main>
 
   <script>
-    // render ikon
-    window.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });
+    // render ikon lucide
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.lucide) lucide.createIcons();
+
+      // tandai menu aktif sesuai URL
+      const path = location.pathname.replace(/\/+$/, '') || '/';
+      document.querySelectorAll('.sidebar nav a').forEach(a => {
+        const href = (a.getAttribute('href') || '').replace(/\/+$/, '') || '/';
+        if (href === path) a.classList.add('active'); else a.classList.remove('active');
+      });
+    });
   </script>
 </body>
 </html>
