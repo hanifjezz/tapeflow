@@ -1,0 +1,96 @@
+:root{
+    --bg:#0f1221; --panel:#151937; --muted:#9aa3b2; --text:#e8ecf3; --accent:#5b8cff;
+    --radius:16px;
+    --brand-size:22px;   /* ubah untuk memperbesar judul Tapeflow */
+    --brand-logo:32px;   /* ubah untuk memperbesar logo */
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--text);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;
+    background:linear-gradient(180deg,#0b0e1a 0%,#0f1221 100%);
+    display:grid; grid-template-columns:260px 1fr; min-height:100vh;
+  }
+  
+  /* Sidebar */
+  .sidebar{
+    background:var(--panel);
+    border-right:1px solid rgba(255,255,255,.06);
+    padding:20px 16px;
+    position:sticky; top:0; height:100vh;
+    display:flex; flex-direction:column; gap:16px;
+  }
+  .brand{
+    display:flex; align-items:center; gap:10px; font-weight:700;
+    padding-bottom:12px; margin-bottom:12px;
+    border-bottom:1px solid rgba(255,255,255,.12); /* garis pembatas */
+  }
+  .brand .logo{ width:var(--brand-logo); height:var(--brand-logo); border-radius:6px; display:block; }
+  .brand > span{ font-size:var(--brand-size); line-height:1.1; }
+  .brand .tm{ font-size:12px; opacity:.6; margin-left:2px; }
+  
+  .sidebar nav{ display:grid; gap:8px; }
+  .sidebar nav a{
+    display:flex; align-items:center; gap:10px;
+    text-decoration:none; color:var(--text);
+    padding:10px 12px; border-radius:10px; opacity:.9;
+  }
+  .sidebar nav a:hover{ background:rgba(255,255,255,.06); opacity:1; }
+  .sidebar nav a.active{ background:var(--accent); color:#fff; opacity:1; }
+  .sidebar nav a i{ width:18px; height:18px; }
+  .nav-sep{ height:6px; }
+  .sidebar footer{ margin-top:auto; color:var(--muted); font-size:12px; }
+  
+  /* Main */
+  main{ padding:28px; }
+  h1{ margin:0 0 12px; font-size:24px; }
+  .muted{ color:var(--muted); }
+  
+  /* Panels / cards */
+  .panel{
+    background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.06);
+    border-radius:var(--radius);
+    padding:16px;
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:12px;
+    margin-top:12px;
+  }
+  .card{
+    background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.06);
+    border-radius:var(--radius);
+    padding:14px;
+  }
+  .card-title{
+    display:flex; align-items:center; gap:8px;
+    font-weight:700; margin-bottom:6px;
+  }
+  .tight{ margin:0; padding-left:18px; }
+  .tight li{ margin:4px 0; }
+  
+  @media (max-width:900px){
+    body{ grid-template-columns:1fr; }
+    .sidebar{ position:static; height:auto; }
+  }
+  
+  /* Besarkan judul Tapeflow di sidebar */
+.sidebar .brand > span {
+    font-size: 25px;   /* ubah 22px ke ukuran yang kamu mau */
+    line-height: 1.1;
+  }
+  
+  .sidebar .brand .tm {
+    font-size: 12px;   /* kecilkan/biarkan sesuai selera */
+    vertical-align: top;
+  }
+  
+  /* (opsional) besarkan logo agar proporsional */
+  .sidebar .brand .logo {
+    width: 28px;
+    height: 28px;
+  }

@@ -1,0 +1,125 @@
+:root{
+    --bg:#0f1221; --panel:#151937; --muted:#9aa3b2; --text:#e8ecf3; --accent:#5b8cff;
+    --ok:#2ecc71; --warn:#f39c12; --bad:#e74c3c; --radius:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--text);
+    font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;
+    background:linear-gradient(180deg,#0b0e1a 0%,#0f1221 100%);
+    display:grid; grid-template-columns:260px 1fr; min-height:100vh;
+  }
+  
+  /* ===== Sidebar ===== */
+  .sidebar{
+    background:var(--panel);
+    border-right:1px solid rgba(255,255,255,.06);
+    padding:20px 16px;
+    position:sticky; top:0; height:100vh;
+    display:flex; flex-direction:column; gap:16px;
+  }
+  .brand{
+    display:flex; align-items:center; gap:10px; font-weight:700;
+    padding-bottom:12px; margin-bottom:12px;
+    border-bottom:1px solid rgba(255,255,255,.12);   /* <== GARIS PEMBATAS */
+  }
+  .brand .logo{ width:28px; height:28px; border-radius:6px; display:block; }
+  .brand .tm{ font-size:10px; opacity:.6; margin-left:2px; }
+  
+  .sidebar nav{ display:grid; gap:8px; }
+  .sidebar nav a{
+    display:flex; align-items:center; gap:10px;
+    text-decoration:none; color:var(--text);
+    padding:10px 12px; border-radius:10px; opacity:.9;
+  }
+  .sidebar nav a:hover{ background:rgba(255,255,255,.06); opacity:1; }
+  .sidebar nav a.active{ background:var(--accent); color:#fff; opacity:1; }
+  .sidebar nav a i{ width:18px; height:18px; }
+  .nav-sep{ height:6px; }
+  .sidebar footer{ margin-top:auto; color:var(--muted); font-size:12px; }
+  
+  /* ===== Main ===== */
+  main{ padding:28px; }
+  h1{ margin:0 0 8px; font-size:24px; }
+  .muted{ color:var(--muted); margin-top:0; }
+  
+  /* KPI strip */
+  .kpis{
+    margin:14px 0 6px;
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(180px,1fr));
+    gap:12px;
+  }
+  .kpi{
+    background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.06);
+    border-radius:14px;
+    padding:12px 14px;
+  }
+  .kpi-title{ color:var(--muted); font-size:12px; }
+  .kpi-val{ font-size:22px; font-weight:700; margin-top:4px; }
+  
+  /* Cards per device */
+  .cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(240px,1fr));
+    gap:16px; margin-top:10px;
+  }
+  .card{
+    background:rgba(255,255,255,.03);
+    border:1px solid rgba(255,255,255,.06);
+    border-radius:var(--radius);
+    padding:16px;
+    box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  .card .title{ font-weight:600; }
+  .card .meta{ color:var(--muted); font-size:12px; }
+  .temp{ font-size:32px; font-weight:700; margin:12px 0; }
+  .badge{
+    display:inline-block; padding:2px 8px; border-radius:999px;
+    font-size:12px; font-weight:600; background:rgba(255,255,255,.08);
+  }
+  .badge.ok{ color:var(--ok); }
+  .badge.warn{ color:var(--warn); }
+  .badge.bad{ color:var(--bad); }
+  
+  @media (max-width:900px){
+    body{ grid-template-columns:1fr; }
+    .sidebar{ position:static; height:auto; }
+  }
+  
+  /* Besarkan judul Tapeflow di sidebar */
+.sidebar .brand > span {
+    font-size: 25px;   /* ubah 22px ke ukuran yang kamu mau */
+    line-height: 1.1;
+  }
+  
+  .sidebar .brand .tm {
+    font-size: 12px;   /* kecilkan/biarkan sesuai selera */
+    vertical-align: top;
+  }
+  
+  /* (opsional) besarkan logo agar proporsional */
+  .sidebar .brand .logo {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .kpi-row{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:12px}
+.card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:12px}
+.kpi-title{color:var(--muted);font-size:12px}
+.kpi-value{font-size:28px;font-weight:800;margin-top:6px}
+.card.ok{border-color:#1f7a1f55}.card.warn{border-color:#c58f1e55}.card.off{border-color:#7a1f1f55}
+.panel{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:14px;overflow:hidden}
+.panel-title{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.06);color:var(--muted)}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:900px){.kpi-row{grid-template-columns:1fr 1fr}.grid-2{grid-template-columns:1fr}}
+.badge{padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700}
+.badge.ok{background:#1f7a1f33;color:#bfffbf}
+.badge.warn{background:#c58f1e33;color:#ffe8b8}
+.badge.off{background:#7a1f1f33;color:#ffb8b8}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}
+.card .title{font-weight:700;margin-bottom:4px}
+.card .meta{color:var(--muted);font-size:12px;margin-top:4px}
+.card .temp{font-size:22px;font-weight:800;margin:8px 0}

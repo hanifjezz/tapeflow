@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="id">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tapeflow — Monitoring</title>
+  
+    <link rel="icon" href="/assets/tapeflow2.png" />
+    <!-- Styles -->
+    <link rel="stylesheet" href="/monitoring/monitoring.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
+  
+    <!-- Vendor libs (defer) -->
+    <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script defer src="https://unpkg.com/lucide@latest"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+  
+    <!-- App JS (setelah semua vendor) -->
+    <script defer src="/monitoring/monitoring.js"></script>
+  </head>
+  
+
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar">
+        <div class="brand">
+            <img src="/assets/tapeflow2.png" alt="Tapeflow" class="logo" />
+            <span>Tapeflow<span class="tm">™</span></span>
+        </div>
+        <nav>
+            <a href="/dashboard/"><i data-lucide="home"></i> Dashboard</a>
+            <a href="/monitoring/"><i data-lucide="thermometer"></i> Monitoring</a>
+            <a href="/about/" class="active"><i data-lucide="info"></i> About</a>
+        </nav>
+
+        <footer>v1.0</footer>
+    </aside>
+
+    <main>
+        <h1>Monitoring</h1>
+
+        <div class="toolbar">
+            <div class="field">
+                <div class="field-label">Device</div>
+                <select id="deviceSelect" class="ui-select"></select>
+            </div>
+
+            <button id="btnRefresh" class="iconbtn" title="Refresh">
+                <i data-lucide="rotate-ccw"></i>
+            </button>
+
+            <div id="sensorChips" class="sensors"></div>
+
+            <div class="ranges" id="rangeButtons">
+                <button class="pill" data-preset="1m">1m</button>
+                <button class="pill active" data-preset="1h">1h</button>
+                <button class="pill" data-preset="1d">1d</button>
+                <button class="pill" data-preset="2d">2d</button>
+            </div>
+
+            <!-- Date picker: WRAP MODE (ikon + teks adalah trigger) -->
+            <div id="dateWrap" class="pill" data-wrap="true"
+                style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;">
+                <input id="dateRange" type="text" data-input style="display:none;">
+                <i data-lucide="calendar" data-toggle></i>
+                <span id="dateLabel" data-toggle>hh/bb/tttt</span>
+            </div>
+
+            <button id="btnExport" class="pill" title="Export PDF"
+                style="margin-left:8px;display:inline-flex;align-items:center;gap:6px;">
+                <i data-lucide="file-down"></i><span>Export PDF</span>
+            </button>
+        </div>
+
+        <!-- Kartu Chart -->
+        <div class="panel chartcard">
+            <div class="chart-header">
+                <div class="left">
+                    <div class="bigtemp">
+                        <span id="bigTemp">--</span> <small>°C</small>
+                    </div>
+                    <div class="sub">Last update: <span id="lastUpdate">--:--</span></div>
+                    <div class="chips">
+                        <span class="chip now" id="chipNow">now --</span>
+                        <span class="chip min" id="chipMin">min --</span>
+                        <span class="chip avg" id="chipAvg">avg --</span>
+                        <span class="chip max" id="chipMax">max --</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chartwrap">
+                <canvas id="tempChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Tabel -->
+        <div class="panel" style="margin-top:12px">
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Waktu (WIB)</th>
+                        <th>Suhu (°C)</th>
+                    </tr>
+                </thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+
+        <p class="muted">Auto refresh tiap 5 detik (nonaktif saat melihat tanggal tertentu).</p>
+    </main>
+
+    <!-- Backdrop untuk kalender di tengah -->
+    <div id="tfDateOverlay" class="tf-overlay"></div>
+
+    <!-- Modal Datepicker (center) -->
+    <div id="tfDateModal" class="tf-modal">
+        <div class="tf-dialog">
+            <div class="tf-head">
+                <span>Pilih tanggal</span>
+                <button id="tfDateClose" class="tf-x" aria-label="Tutup">×</button>
+            </div>
+
+            <!-- host untuk flatpickr inline -->
+            <div id="tfCalendarHost"></div>
+
+            <div class="tf-actions">
+                <button id="tfDateApply" class="pill primary">Terapkan</button>
+                <button id="tfDateCancel" class="pill">Batal</button>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

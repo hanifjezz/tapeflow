@@ -1,0 +1,232 @@
+/* =========================================================
+   Tapeflow Monitoring — Dark UI + Centered Datepicker
+   Sidebar seragam dengan About + kontrol toolbar sejajar
+   ========================================================= */
+
+/* ---------- CSS variables (selaras About) ---------- */
+:root{
+  --bg:           #0f1221;          /* background body */
+  --panel:        #151937;          /* panel/side-bg */
+  --text:         #e8ecf3;
+  --muted:        #9aa3b2;
+  --accent:       #5b8cff;
+
+  /* warna/komponen tambahan monitoring */
+  --bg-2:         #101b30;
+  --border:       rgba(255,255,255,.06);
+  --accent-2:     #6ea2ff;
+  --good:         #22c55e;
+  --warn:         #eab308;
+  --bad:          #f43f5e;
+  --chip:         rgba(255,255,255,.03);
+  --chip-active:  #1b2d59;
+  --pill:         rgba(255,255,255,.03);
+  --pill-bd:      rgba(255,255,255,.06);
+  --shadow:       0 10px 30px rgba(0,0,0,.35);
+
+  /* tinggi standar kontrol */
+  --control-h:    42px;
+}
+
+/* ---------- Reset ---------- */
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0; color:var(--text);
+  font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial;
+  background:linear-gradient(180deg,#0b0e1a 0%, var(--bg) 100%);
+  /* Layout seperti About: grid 260px | 1fr */
+  display:grid; grid-template-columns:260px 1fr; min-height:100vh;
+}
+
+/* =========================================================
+   SIDEBAR (persis About/Dashboard)
+   ========================================================= */
+   .sidebar{
+    background:var(--panel);
+    border-right:1px solid var(--border);
+    padding:20px 16px;
+    position:sticky; top:0; height:100vh;
+    display:flex; flex-direction:column; gap:16px;
+  }
+  .sidebar .brand{
+    display:flex; align-items:center; gap:10px; font-weight:700;
+    padding-bottom:12px; margin-bottom:12px;
+    border-bottom:1px solid rgba(255,255,255,.12);
+  }
+  .sidebar .brand .logo{
+    width:28px; height:28px; border-radius:6px; display:block;
+  }
+  /* Judul + TM presisi */
+  .sidebar .brand > span{
+    display:inline-flex; align-items:flex-start;   /* kunci baseline ke atas */
+    font-size:25px; line-height:1.1; font-weight:700;
+  }
+  .sidebar .brand > span .tm{
+    font-size:12px; opacity:.6; margin-left:2px;
+    line-height:1; vertical-align:top;
+    position:relative; top:-2px;                 /* offset final agar identik */
+  }
+  
+  .sidebar nav{ display:grid; gap:8px; }
+  .sidebar nav a{
+    display:flex; align-items:center; gap:10px;
+    text-decoration:none; color:var(--text);
+    padding:10px 12px; border-radius:10px; opacity:.9;
+  }
+  .sidebar nav a:hover{ background:rgba(255,255,255,.06); opacity:1; }
+  .sidebar nav a.active{ background:var(--accent); color:#fff; opacity:1; }
+  .sidebar nav a i{ width:18px; height:18px; }
+  .sidebar footer{ margin-top:auto; color:var(--muted); font-size:12px; }
+
+/* =========================================================
+   MAIN AREA
+   ========================================================= */
+main{ padding:28px; }
+h1{ margin:0 0 14px; font-size:24px; font-weight:700; }
+.muted{ color:var(--muted); }
+
+/* ---------- Toolbar (Device + Refresh + Range) ---------- */
+.toolbar{
+  display:flex; align-items:flex-end; gap:10px;
+  flex-wrap:wrap; margin:4px 0 16px;
+}
+.field{ display:flex; flex-direction:column; gap:6px; }
+.field-label{ color:var(--muted); font-size:12px; line-height:1; }
+
+.ui-select{
+  min-width:260px; background:var(--panel); color:var(--text);
+  border:1px solid var(--pill-bd);
+  height:var(--control-h);
+  display:inline-flex; align-items:center;
+  padding:0 12px; border-radius:12px; outline:none;
+}
+
+.iconbtn{
+  background:var(--panel); border:1px solid var(--pill-bd); color:var(--text);
+  height:var(--control-h); width:var(--control-h);
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:0; border-radius:12px; cursor:pointer;
+}
+.iconbtn:hover{ background:rgba(255,255,255,.06); }
+.iconbtn svg{ width:18px; height:18px; }
+
+/* ---------- Sensor chips ---------- */
+.sensors{ display:flex; align-items:center; gap:8px; margin-left:6px; flex-wrap:wrap; }
+.sensor-pill{
+  padding:8px 12px; border-radius:999px; background:var(--chip); border:1px solid var(--pill-bd);
+  color:var(--text); cursor:pointer;
+}
+.sensor-pill.active{
+  background:var(--chip-active);
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px rgba(91,140,255,.45) inset;
+}
+
+/* ---------- Range pills (1m/1h/1d/2d) ---------- */
+.ranges{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+.pill{
+  padding:8px 12px; border-radius:999px; background:var(--pill); color:var(--text);
+  border:1px solid var(--pill-bd); cursor:pointer; height:var(--control-h);
+  display:inline-flex; align-items:center; gap:8px;
+}
+.pill:hover{ background:rgba(255,255,255,.06); }
+.pill.active{ background:var(--accent); border-color:transparent; color:#fff; }
+#dateWrap.pill{ padding:0 12px; }
+#dateWrap.active{ box-shadow:0 0 0 2px rgba(91,140,255,.45) inset; }
+#dateLabel{ user-select:none; }
+
+/* ---------- Panels ---------- */
+.panel{
+  background:rgba(255,255,255,.03);
+  border:1px solid var(--pill-bd); border-radius:16px; box-shadow:var(--shadow);
+  padding:16px;
+}
+
+/* ---------- Chart card ---------- */
+.chartcard{ padding:0; overflow:hidden; }
+.chart-header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px; border-bottom:1px solid var(--pill-bd);
+}
+.chart-header .left{ display:flex; flex-direction:column; gap:8px; }
+.bigtemp{ font-size:34px; font-weight:800; letter-spacing:.3px; }
+.bigtemp small{ font-size:.55em; color:var(--muted); font-weight:700; margin-left:4px; }
+.sub{ color:var(--muted); font-size:12px; }
+
+.chips{ display:flex; gap:8px; flex-wrap:wrap; }
+.chip{
+  display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px;
+  background:var(--chip); color:var(--text); border:1px solid var(--pill-bd); font-weight:600; font-size:12px;
+}
+.chip.now{ color:#cfe7ff; }
+.chip.min{ color:var(--good); }
+.chip.avg{ color:var(--warn); }
+.chip.max{ color:var(--bad); }
+
+.chartwrap{ padding:8px 12px 12px; height:360px; }
+#tempChart{ width:100%; height:100%; display:block; }
+
+/* ---------- Table ---------- */
+table{ width:100%; border-collapse:separate; border-spacing:0; }
+thead th{
+  text-align:left; font-weight:700; color:var(--muted); font-size:12px;
+  border-bottom:1px solid var(--pill-bd); padding:10px 12px;
+}
+tbody td{ padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.04); }
+tbody tr:hover{ background:rgba(255,255,255,.03); }
+
+/* =========================================================
+   FLATPICKR: overlay + center modal style
+   ========================================================= */
+.tf-overlay{
+  position:fixed; inset:0; background:rgba(8,12,20,.55); backdrop-filter:blur(2px);
+  opacity:0; pointer-events:none; transition:opacity .18s ease; z-index:4000;
+}
+.tf-overlay.show{ opacity:1; pointer-events:auto; }
+
+.flatpickr-calendar.tf-calendar{
+  position:fixed !important;
+  left:50% !important; top:50% !important; transform:translate(-50%,-50%) !important;
+  z-index:4001 !important; border-radius:14px !important;
+  box-shadow:0 18px 55px rgba(0,0,0,.45) !important;
+  border:1px solid var(--pill-bd) !important; overflow:hidden;
+}
+.flatpickr-calendar.tf-calendar,
+.flatpickr-calendar.tf-calendar .flatpickr-days,
+.flatpickr-calendar.tf-calendar .flatpickr-weekdaycontainer{
+  background:var(--panel) !important; color:var(--text) !important;
+}
+.flatpickr-calendar.tf-calendar .flatpickr-day{ color:var(--text); border-radius:8px; }
+.flatpickr-calendar.tf-calendar .flatpickr-day:hover{ background:#1b2d55; }
+.flatpickr-calendar.tf-calendar .flatpickr-day.selected,
+.flatpickr-calendar.tf-calendar .flatpickr-day.startRange,
+.flatpickr-calendar.tf-calendar .flatpickr-day.endRange{
+  background:var(--accent) !important; border-color:var(--accent) !important; color:#fff !important;
+}
+.flatpickr-calendar.tf-calendar .flatpickr-months{
+  background:var(--panel); border-bottom:1px solid var(--pill-bd);
+}
+.flatpickr-calendar.tf-calendar .flatpickr-current-month input.cur-year,
+.flatpickr-calendar.tf-calendar .flatpickr-current-month .flatpickr-monthDropdown-months{
+  color:var(--text);
+}
+
+/* ---------- Micro-interaction ---------- */
+button, .pill, .sensor-pill, .iconbtn{
+  transition: transform .04s ease, background .15s ease, box-shadow .15s ease;
+}
+button:active, .pill:active, .sensor-pill:active, .iconbtn:active{
+  transform: translateY(1px);
+}
+
+/* =========================================================
+   RESPONSIVE
+   ========================================================= */
+@media (max-width:900px){
+  body{ grid-template-columns:1fr; }
+  .sidebar{ position:static; height:auto; }
+  main{ padding:16px; }
+  .ui-select{ min-width:200px; }
+  .chartwrap{ height:300px; }
+}

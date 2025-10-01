@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tapeflow</title>
+  <link rel="icon" href="/assets/tapeflow2.png" />
+  <link rel="stylesheet" href="about.css" />
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="/assets/tapeflow2.png" alt="Tapeflow logo" class="logo" />
+      <span>Tapeflow<span class="tm">™</span></span>
+    </div>
+
+    <nav>
+      <a href="/dashboard/"><i data-lucide="home"></i> Dashboard</a>
+      <a href="/monitoring/"><i data-lucide="thermometer"></i> Monitoring</a>
+      <a href="/about/" class="active"><i data-lucide="info"></i> About</a>
+    </nav>    
+
+    <footer>v1.0</footer>
+  </aside>
+
+  <main>
+    <h1>About</h1>
+
+    <section class="panel">
+      <p>Tapeflow adalah website sederhana untuk memantau suhu proses pembuatan tape/tapai.</p>
+      <ul>
+        <li>Frontend: HTML + CSS + Vanilla JS</li>
+        <li>Backend: Node.js (Express) + MySQL</li>
+        <li>Endpoint: <code>/api/devices</code>, <code>/api/latest</code>, <code>/api/measurements</code></li>
+      </ul>
+      <p class="muted">Versi awal — hanya viewer tanpa login.</p>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="card-title"><i data-lucide="target"></i> Tujuan</div>
+        <p>Memberikan pemantauan suhu real-time yang mudah dibaca dan stabil untuk proses fermentasi.</p>
+      </div>
+      <div class="card">
+        <div class="card-title"><i data-lucide="server"></i> Teknologi</div>
+        <p>ESP32 + sensor suhu → REST API → database MySQL → UI ringan tanpa framework.</p>
+      </div>
+      <div class="card">
+        <div class="card-title"><i data-lucide="hammer"></i> Roadmap</div>
+        <ul class="tight">
+          <li>Threshold & notifikasi</li>
+          <li>Export CSV</li>
+          <li>Multi-batch tracking</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // render ikon
+    window.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });
+  </script>
+</body>
+</html>

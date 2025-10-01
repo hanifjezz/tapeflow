@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tapeflow</title>
+  <link rel="icon" href="/assets/tapeflow2.png" />
+  <link rel="stylesheet" href="dashboard.css" />
+  <script src="https://unpkg.com/lucide@latest" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <img src="/assets/tapeflow2.png" alt="Tapeflow logo" class="logo" />
+      <span>Tapeflow<span class="tm">™</span></span>
+    </div>
+
+    <nav>
+      <a href="/dashboard/"><i data-lucide="home"></i> Dashboard</a>
+      <a href="/monitoring/"><i data-lucide="thermometer"></i> Monitoring</a>
+      <a href="/about/" class="active"><i data-lucide="info"></i> About</a>
+    </nav>    
+
+    <footer>v1.0</footer>
+  </aside>
+
+  <main>
+    <h1>Dashboard</h1>
+    <p class="muted">Ringkasan suhu terakhir setiap device.</p>
+
+    <!-- KPI -->
+    <div class="kpi-row" id="kpiRow">
+      <div class="card">
+        <div class="kpi-title">Total Wadah</div>
+        <div class="kpi-value" id="kpiTotal">--</div>
+      </div>
+      <div class="card ok">
+        <div class="kpi-title">Online</div>
+        <div class="kpi-value" id="kpiOnline">--</div>
+      </div>
+      <div class="card warn">
+        <div class="kpi-title">Alert</div>
+        <div class="kpi-value" id="kpiAlert">--</div>
+      </div>
+      <div class="card off">
+        <div class="kpi-title">Offline</div>
+        <div class="kpi-value" id="kpiOffline">--</div>
+      </div>
+    </div>
+
+    <!-- Per-device breakdown -->
+    <div class="panel" style="margin-top:12px">
+      <div class="panel-title">Ringkasan per Device</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Device</th><th>Total</th><th>Online</th><th>Alert</th><th>Offline</th>
+          </tr>
+        </thead>
+        <tbody id="tbDevice"></tbody>
+      </table>
+    </div>
+
+    <!-- Top Hot / Cold -->
+    <div class="grid-2" style="margin-top:12px">
+      <div class="panel">
+        <div class="panel-title">Top 5 Terpanas</div>
+        <table>
+          <thead><tr><th>Sensor</th><th>Device</th><th>Suhu</th><th>Waktu</th></tr></thead>
+          <tbody id="tbHot"></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Top 5 Terdingin</div>
+        <table>
+          <thead><tr><th>Sensor</th><th>Device</th><th>Suhu</th><th>Waktu</th></tr></thead>
+          <tbody id="tbCold"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Latest updates -->
+    <div class="panel" style="margin-top:12px">
+      <div class="panel-title">Update Terbaru</div>
+      <table>
+        <thead><tr><th>Sensor</th><th>Device</th><th>Suhu</th><th>Status</th><th>Waktu</th></tr></thead>
+        <tbody id="tbLatest"></tbody>
+      </table>
+    </div>
+
+    <!-- Fallback cards (dipakai kalau summary API belum ada) -->
+    <div id="fallbackCards" class="cards" style="display:none; margin-top:12px"></div>
+  </main>
+
+  <script>
+    // ================= BASE URL API =================
+    const API = "http://localhost:4000";
+    // ================================================
+
+    // lucide icons
+    window.addEventListener('DOMContentLoaded', () => { if (window.lucide) lucide.createIcons(); });
+
+    const $ = (sel) => document.querySelector(sel);
+    const fmtTime = (ts) => ts ? new Date(ts).toLocaleString() : "-";
+
+    const badgeStatus = (s) => {
+      if (!s) return `<span class="badge">-</span>`;
+      const cls = s === 'online' ? 'ok' : (s === 'alert' ? 'warn' : 'off');
+      return `<span class="badge ${cls}">${s}</span>`;
+    };
+
+    async function loadSummary() {
+      // Coba summary API dulu
+      try {
+        const r = await fetch(`${API}/api/dashboard/summary`);
+        if (!r.ok) throw new Error('summary not available');
+        const j = await r.json();
+
+        // KPI
+        $("#kpiTotal").textContent   = j.totals?.total   ?? "--";
+        $("#kpiOnline").textContent  = j.totals?.online  ?? "--";
+        $("#kpiAlert").textContent   = j.totals?.alert   ?? "--";
+        $("#kpiOffline").textContent = j.totals?.offline ?? "--";
+
+        // Per device
+        $("#tbDevice").innerHTML = (j.per_device || []).map(d => `
+          <tr>
+            <td>${d.device_name}</td>
+            <td>${d.total}</td>
+            <td>${d.online}</td>
+            <td>${d.alert}</td>
+            <td>${d.offline}</td>
+          </tr>
+        `).join("");
+
+        // Top hot/cold
+        $("#tbHot").innerHTML = (j.top_hot || []).map(r => `
+          <tr>
+            <td>${r.sensor_name}</td>
+            <td>${r.device_name}</td>
+            <td>${Number(r.temperature).toFixed(2)} °C</td>
+            <td>${fmtTime(r.timestamp)}</td>
+          </tr>
+        `).join("");
+
+        $("#tbCold").innerHTML = (j.top_cold || []).map(r => `
+          <tr>
+            <td>${r.sensor_name}</td>
+            <td>${r.device_name}</td>
+            <td>${Number(r.temperature).toFixed(2)} °C</td>
+            <td>${fmtTime(r.timestamp)}</td>
+          </tr>
+        `).join("");
+
+        // Latest updates
+        $("#tbLatest").innerHTML = (j.latest || []).map(r => `
+          <tr>
+            <td>${r.sensor_name}</td>
+            <td>${r.device_name}</td>
+            <td>${r.temperature != null ? Number(r.temperature).toFixed(2)+' °C' : '-'}</td>
+            <td>${badgeStatus(r.status)}</td>
+            <td>${fmtTime(r.timestamp)}</td>
+          </tr>
+        `).join("");
+
+        // Sembunyikan fallback cards jika sebelumnya tampil
+        $("#fallbackCards").style.display = "none";
+        return; // sukses summary, selesai
+      } catch (e) {
+        // lanjut ke fallback
+      }
+
+      // ===== FALLBACK: pakai /api/latest (versi lamamu) =====
+      try {
+        const res = await fetch(`${API}/api/latest`);
+        const data = await res.json();
+
+        // Hide summary sections (biar tidak kosong) jika backend lama
+        $("#kpiTotal").textContent = data.length;
+        $("#kpiOnline").textContent = "--";
+        $("#kpiAlert").textContent = "--";
+        $("#kpiOffline").textContent = "--";
+        $("#tbDevice").innerHTML = "";
+        $("#tbHot").innerHTML = "";
+        $("#tbCold").innerHTML = "";
+        $("#tbLatest").innerHTML = "";
+
+        // Tampilkan kartu fallback
+        const wrap = $("#fallbackCards");
+        wrap.style.display = "grid";
+        wrap.innerHTML = data.map(d => {
+          const title = d.sensor_name || d.name || `Device ${d.device_id}`;
+          const meta  = d.device_name
+            ? (d.location ? `${d.device_name} — ${d.location}` : d.device_name)
+            : (d.location || "-");
+          const t = d.temperature != null ? Number(d.temperature).toFixed(2) : "--";
+          return `
+            <div class="card">
+              <div class="title">${title}</div>
+              <div class="meta">${meta}</div>
+              <div class="temp">${t} °C</div>
+              <div class="meta">Update: ${fmtTime(d.timestamp)}</div>
+            </div>
+          `;
+        }).join("");
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    loadSummary();
+    setInterval(loadSummary, 10000); // refresh tiap 10 detik
+  </script>
+</body>
+</html>
