@@ -364,9 +364,12 @@ async function loadMeasurements(){
         sensorSort({ id: normId(a.id), name: a.name }, { id: normId(b.id), name: b.name })
       );
 
+      // pilih seri sesuai chip (robust ke id/nama)
+      const want = selectedSensor === 'all' ? null : normId(selectedSensor);
       const usedSeries = sortedSeries.filter((s, idx) => {
         const sid = normId(s.id ?? String.fromCharCode(65 + idx));
-        return selectedSensor === 'all' || normId(selectedSensor) === sid;
+        const byName = normId(s.name || '') === sid || normId(s.name || '') === want;
+        return selectedSensor === 'all' || sid === want || byName;
       });
 
       usedSeries.forEach((s, idx) => {
