@@ -24,9 +24,9 @@ const WIB_TZ            = 'Asia/Jakarta';
 ======================= */
 let chart, gradient;
 let poller = null;
-let sensorCache = [];          // {id: number, name: string, addr?: 'A'|'B'|'C'}
+let sensorCache = [];          // {id, name}[]
 let deviceCache = [];          // {id, name, location?}[]
-let selectedSensor = 'all';    // 'all' | number
+let selectedSensor = 'all';    // 'all' | 'A' | 'B' | '1' | ...
 let selectedDevice = null;     // device id | null
 let activePreset   = '1h';     // '1m'|'1h'|'1d'|'2d'
 let activeDateRange = null;    // {from:Date, to:Date} | null
@@ -193,7 +193,8 @@ function computeRangeAnchored(){
     return { from, to, intervalSec:120, unit:'minute', step:2 };
   }
   if (activePreset === '1d'){
-    const from = startOfDay(now);
+    const start = startOfDay(now);
+    const from = start;
     const to   = endOfDayExclusive(now);
     return { from, to, intervalSec:3600, unit:'hour', step:1 };
   }
@@ -215,6 +216,21 @@ function computeRangeAnchored(){
 async function safeJSON(res){
   const text = await res.text();
   try { return JSON.parse(text); } catch { return {}; }
+}
+
+// Urutkan "Wadah A", "Wadah B", ...; lalu ID angka 1,2,3...
+function sensorSort(a, b) {
+  const A = String(a.id ?? a.name ?? '').toUpperCase();
+  const B = String(b.id ?? b.name ?? '').toUpperCase();
+
+  const isLetter = v => /^[A-Z]$/.test(v);
+  const isNumber = v => /^\d+$/.test(v);
+
+  if (isLetter(A) && isLetter(B)) return A.localeCompare(B); // A,B,C...
+  if (isNumber(A) && isNumber(B)) return Number(A) - Number(B);
+  if (isLetter(A) && isNumber(B)) return -1; // huruf dulu, baru angka
+  if (isNumber(A) && isLetter(B)) return 1;
+  return (a.name || '').localeCompare(b.name || '');
 }
 
 async function loadDevices(){
@@ -245,25 +261,20 @@ async function loadDevices(){
 async function loadSensors(){
   if (!sensorChips) return;
 
-  // coba endpoint khusus sensors
-  /** target shape: {id:number, name:string, addr?:'A'|'B'|'C'} */
   let sensors = [];
+
+  // 1) coba endpoint khusus
   if (selectedDevice){
     try{
       const res = await fetch(`${API}/sensors?device_id=${encodeURIComponent(selectedDevice)}`, { cache: 'no-store' });
       if (res.ok){
         const js = await safeJSON(res);
-        const arr = Array.isArray(js) ? js : (js.sensors || []);
-        sensors = arr.map((s, i) => ({
-          id: Number(s.id ?? (i+1)),
-          name: s.name ?? `Sensor ${i+1}`,
-          addr: s.addr ?? s.code ?? s.label ?? null
-        }));
+        sensors = Array.isArray(js) ? js : (js.sensors || []);
       }
     }catch{}
   }
 
-  // fallback: derive dari /measurements (series)
+  // 2) fallback dari /measurements (series)
   if (!sensors.length){
     try{
       const { from, to } = computeRangeAnchored();
@@ -271,43 +282,45 @@ async function loadSensors(){
         from: toMySQLLocal(from), to: toMySQLLocal(to),
         tzOffsetMinutes: String(TZ_OFFSET_MINUTES)
       });
-      if (selectedDevice) qs.set('device_id', String(selectedDevice));
       const res = await fetch(`${API}/measurements?${qs}`, { cache: 'no-store' });
       if (res.ok){
         const js = await safeJSON(res);
-        if (Array.isArray(js.series) && js.series.length){
+        if (Array.isArray(js.series)) {
           sensors = js.series.map((s, i) => ({
-            id: i+1,                                 // pakai index konsisten
-            name: s.name ?? `Sensor ${i+1}`,
-            addr: (s.id ?? s.addr ?? null)           // simpan addr untuk filter
+            id: String(s.id ?? String.fromCharCode(65 + i)), // A,B,C default
+            name: s.name || `Wadah ${String(s.id ?? String.fromCharCode(65 + i))}`
           }));
         } else if (Array.isArray(js.rows)) {
-          sensors = [{ id: 1, name: 'Sensor 1', addr: null }];
+          sensors = [{ id: 'A', name: 'Wadah A' }];
         }
       }
     }catch{}
   }
 
+  // 3) urutkan A,B,C,... lalu angka
+  sensors.sort(sensorSort);
   sensorCache = sensors.slice();
 
+  // 4) render chips (ID disimpan sbg STRING!)
   const keep = selectedSensor;
   sensorChips.innerHTML =
-    `<button class="sensor-pill ${keep==='all'?'active':''}" data-sid="all">All</button>` +
-    sensors.map(s => `<button class="sensor-pill ${keep===s.id?'active':''}" data-sid="${s.id}">${s.name}</button>`).join('');
+    `<button class="sensor-pill ${keep === 'all' ? 'active' : ''}" data-sid="all">All</button>` +
+    sensors.map(s => `<button class="sensor-pill ${keep === String(s.id) ? 'active' : ''}" data-sid="${String(s.id)}">${s.name}</button>`).join('');
 
-  sensorChips.querySelectorAll('.sensor-pill').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      sensorChips.querySelectorAll('.sensor-pill').forEach(b=>b.classList.remove('active'));
+  sensorChips.querySelectorAll('.sensor-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      sensorChips.querySelectorAll('.sensor-pill').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      selectedSensor = btn.dataset.sid === 'all' ? 'all' : Number(btn.dataset.sid);
-      localStorage.setItem('tapeflow_sensor', String(selectedSensor));
+      selectedSensor = btn.dataset.sid === 'all' ? 'all' : String(btn.dataset.sid);
+      localStorage.setItem('tapeflow_sensor', selectedSensor);
       loadMeasurements();
     });
   });
 
+  // 5) restore pilihan
   const saved = localStorage.getItem('tapeflow_sensor');
   if (saved && (saved === 'all' || sensors.some(s => String(s.id) === saved))) {
-    selectedSensor = saved === 'all' ? 'all' : Number(saved);
+    selectedSensor = saved;
     sensorChips.querySelector(`[data-sid="${saved}"]`)?.classList.add('active');
   } else {
     selectedSensor = 'all';
@@ -331,7 +344,7 @@ function clampRows(rows, from, to){
 }
 
 /* =======================
-   LOAD DATA (anti-race + hard clamp)
+   LOAD DATA (anti-race + no-fallback + hard clamp)
 ======================= */
 async function loadMeasurements(){
   ensureChart();
@@ -347,6 +360,7 @@ async function loadMeasurements(){
   chart.options.scales.x.min = from.getTime();
   chart.options.scales.x.max = to.getTime();
 
+  // susun query (kompat: from/to & start/end)
   const qs = new URLSearchParams({
     tzOffsetMinutes: String(TZ_OFFSET_MINUTES),
     interval: String(intervalSec),
@@ -355,41 +369,43 @@ async function loadMeasurements(){
   });
   if (selectedDevice) qs.set('device_id', String(selectedDevice));
 
-  // jika single sensor, kirim addr supaya API juga bisa balas rows spesifik
-  let sensorAddr = null;
-  if (selectedSensor !== 'all') {
-    const s = sensorCache.find(x => Number(x.id) === Number(selectedSensor));
-    sensorAddr = s?.addr || (selectedSensor===1?'A':selectedSensor===2?'B':selectedSensor===3?'C':null);
-    if (sensorAddr) qs.set('addr', sensorAddr);
-  }
-
   try{
     const res = await fetch(`${API}/measurements?${qs}`, { cache: 'no-store' });
-    if (mySeq !== loadSeq) return;
+    if (mySeq !== loadSeq) return; // abaikan hasil usang
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const js = await safeJSON(res);
 
     let datasets = [];
     let tableRows = [];
 
-    if (Array.isArray(js.series) && js.series.length) {
-      // filter seri jika user pilih sensor tertentu
-      let usedSeries = js.series;
-      if (selectedSensor !== 'all' && sensorAddr) {
-        usedSeries = usedSeries.filter(s => (s.id ?? s.addr) === sensorAddr);
-      }
+    if (Array.isArray(js.series)) {
+      // urutkan series agar konsisten (A,B,C,... lalu angka)
+      const sortedSeries = js.series.slice().sort((a, b) => {
+        return sensorSort(
+          { id: String(a.id ?? ''), name: a.name },
+          { id: String(b.id ?? ''), name: b.name }
+        );
+      });
+
+      // filter sesuai chip
+      const usedSeries = sortedSeries.filter((s, idx) => {
+        const sid = String(s.id ?? String.fromCharCode(65 + idx)); // 'A','B',...
+        return selectedSensor === 'all' || selectedSensor === sid;
+      });
 
       usedSeries.forEach((s, idx) => {
+        const sid = String(s.id ?? String.fromCharCode(65 + idx));
+        const label = s.name || `Wadah ${sid}`;
         const raw = (s.rows || [])
-          .map(r => ({ x:new Date(r.timestamp), y:r.temperature==null?null:Number(r.temperature), name: s.name ?? `Sensor ${idx+1}` }))
+          .map(r => ({ x:new Date(r.timestamp), y:r.temperature==null?null:Number(r.temperature), name: label }))
           .sort((a,b)=>a.x-b.x);
         const clamped = raw.filter(p => p.x >= from && p.x < to);
 
         datasets.push({
-          label: s.name ?? (sensorAddr ? `Wadah ${sensorAddr}` : `Sensor ${idx+1}`),
+          label,
           data: clamped,
           borderColor: PALETTE[idx % PALETTE.length],
-          backgroundColor: (selectedSensor==='all' ? 'transparent' : gradient),
+          backgroundColor: selectedSensor === 'all' ? 'transparent' : gradient,
           borderWidth: 2,
           tension: 0.25,
           pointRadius: 0,
@@ -397,28 +413,15 @@ async function loadMeasurements(){
           fill: selectedSensor !== 'all'
         });
 
-        tableRows = tableRows.concat(clamped.map(r => ({ timestamp: r.x, temperature: r.y, name: s.name ?? `Sensor ${idx+1}` })));
+        tableRows = tableRows.concat(clamped.map(r => ({ timestamp: r.x, temperature: r.y, name: label })));
       });
-
-      // Jika user pilih sensor dan API juga mengirim rows khusus, merge agar pasti ada
-      if (selectedSensor !== 'all' && Array.isArray(js.rows) && js.rows.length && !datasets.length) {
-        const clamped = clampRows(js.rows, from, to);
-        datasets = [{
-          label: `Wadah ${sensorAddr || '-'}`,
-          data: clamped,
-          borderWidth: 2,
-          borderColor: PALETTE[0],
-          backgroundColor: gradient,
-          fill: true,
-          tension: 0.25,
-          pointRadius: 0,
-          spanGaps: true
-        }];
-        tableRows = clamped.map(r => ({ timestamp:r.x, temperature:r.y, name:`Wadah ${sensorAddr||'-'}` }));
-      }
     } else if (Array.isArray(js.rows)) {
-      // single rows shape
-      const clamped = clampRows(js.rows, from, to);
+      const raw = js.rows.map(r => ({
+        x:new Date(r.timestamp),
+        y:r.temperature==null?null:Number(r.temperature),
+        name: r.name ?? r.sensor ?? 'Sensor 1'
+      })).sort((a,b)=>a.x-b.x);
+      const clamped = raw.filter(p => p.x >= from && p.x < to);
       datasets = [{
         label: selectedSensor==='all' ? 'Suhu (°C)' : `Sensor ${selectedSensor}`,
         data: clamped,
@@ -431,6 +434,9 @@ async function loadMeasurements(){
         spanGaps: true
       }];
       tableRows = clamped.map(r => ({ timestamp: r.x, temperature: r.y, name: r.name }));
+    } else {
+      datasets = [];
+      tableRows = [];
     }
 
     const totalPoints = datasets.reduce((n,d)=>n + d.data.length, 0);
@@ -473,7 +479,10 @@ async function loadMeasurements(){
     }
   }catch(err){
     console.error('loadMeasurements failed:', err);
-    if (chart){ chart.data.datasets = []; chart.update(); }
+    if (chart){
+      chart.data.datasets = [];
+      chart.update();
+    }
     applyStats({ now:'—', min:'—', avg:'—', max:'—' });
     if (tbody) tbody.innerHTML = `<tr><td colspan="3" class="muted">Gagal memuat data.</td></tr>`;
     showEmptyState(true);
@@ -620,8 +629,8 @@ function setupExportPDF(){
     })();
     const sensorText = (function(){
       if (selectedSensor === 'all') return 'All sensors';
-      const s = (sensorCache || []).find(x => Number(x.id) === Number(selectedSensor));
-      return s ? s.name : `Sensor #${selectedSensor}`;
+      const s = (sensorCache || []).find(x => String(x.id) === String(selectedSensor));
+      return s ? s.name : `Sensor ${selectedSensor}`;
     })();
 
     let from, to, rangeLabel;
