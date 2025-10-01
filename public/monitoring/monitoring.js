@@ -17,7 +17,7 @@ let chart, gradient;
 let poller = null;
 let sensorCache = [];          // {id, name}[]
 let deviceCache = [];          // {id, name, location?}[]
-let selectedSensor = 'all';    // 'all' | 'A' | 'B' | '1' | ...
+let selectedSensor = 'all';    // 'all' | 'A' | 'B' | ...
 let selectedDevice = null;     // device id | null
 let activePreset   = '1h';     // '1m'|'1h'|'1d'|'2d'
 let activeDateRange = null;    // {from:Date, to:Date} | null
@@ -42,9 +42,19 @@ document.addEventListener('DOMContentLoaded', () => {
 const normId = (v) => {
   if (v === undefined || v === null) return '';
   const s = String(v).trim();
-  // kalau “Wadah A/B” pernah dipakai sebagai id mentah, ambil huruf/angka terakhir
   const m = s.match(/([A-Za-z]|\d+)$/);
   return (m ? m[1] : s).toUpperCase();
+};
+
+// paksa id huruf A/B/C meskipun backend kasih angka 1/2/3
+const toLetter = (rawId, nameHint, fallbackIdx=0) => {
+  const n = Number(rawId);
+  if (!Number.isNaN(n) && n > 0 && n < 27) return String.fromCharCode(64 + n); // 1->A
+  const m = (nameHint || '').match(/\b([A-Za-z])\b/);
+  if (m) return m[1].toUpperCase();
+  const s = String(rawId ?? '').trim();
+  if (/^[A-Za-z]$/.test(s)) return s.toUpperCase();
+  return String.fromCharCode(65 + (fallbackIdx % 26)); // A..Z
 };
 
 function toMySQLLocal(dt){
@@ -191,9 +201,10 @@ async function safeJSON(res){
 const sensorSort = (a, b) => {
   const A = normId(a.id ?? a.name);
   const B = normId(b.id ?? b.name);
+  // huruf dulu (A,B,C...), lalu angka (1,2,3), lalu nama
   const isLetter = v => /^[A-Z]$/.test(v);
   const isNumber = v => /^\d+$/.test(v);
-  if (isLetter(A) && isLetter(B)) return A.localeCompare(B); // A,B,C...
+  if (isLetter(A) && isLetter(B)) return A.localeCompare(B);
   if (isNumber(A) && isNumber(B)) return Number(A) - Number(B);
   if (isLetter(A) && isNumber(B)) return -1;
   if (isNumber(A) && isLetter(B)) return 1;
@@ -229,29 +240,36 @@ async function loadSensors(){
   if (!sensorChips) return;
   let sensors = [];
 
+  // 1) coba endpoint sensors (sering id=1/2/3) → paksa huruf
   if (selectedDevice){
     try{
       const res = await fetch(`${API}/sensors?device_id=${encodeURIComponent(selectedDevice)}`, { cache: 'no-store' });
       if (res.ok){
         const js = await safeJSON(res);
-        sensors = Array.isArray(js) ? js : (js.sensors || []);
+        const arr = Array.isArray(js) ? js : (js.sensors || []);
+        sensors = arr.map((s, i) => {
+          const sid = toLetter(s.id ?? s.addr ?? s.code, s.name, i);
+          return { id: sid, name: s.name || `Wadah ${sid}` };
+        });
       }
     }catch{}
   }
 
+  // 2) fallback: derive dari /measurements (biasanya sudah id huruf)
   if (!sensors.length){
     try{
       const { from, to } = computeRangeAnchored();
       const qs = new URLSearchParams({
         from: toMySQLLocal(from), to: toMySQLLocal(to),
-        tzOffsetMinutes: String(TZ_OFFSET_MINUTES)
+        tzOffsetMinutes: String(TZ_OFFSET_MINUTES),
+        ...(selectedDevice ? { device_id: String(selectedDevice) } : {})
       });
       const res = await fetch(`${API}/measurements?${qs}`, { cache: 'no-store' });
       if (res.ok){
         const js = await safeJSON(res);
         if (Array.isArray(js.series)) {
           sensors = js.series.map((s, i) => {
-            const sid = normId(s.id ?? String.fromCharCode(65 + i));
+            const sid = toLetter(s.id, s.name, i);
             return { id: sid, name: s.name || `Wadah ${sid}` };
           });
         } else if (Array.isArray(js.rows)) {
@@ -261,26 +279,31 @@ async function loadSensors(){
     }catch{}
   }
 
-  sensors.forEach(s => s.id = normId(s.id));
+  // sort & simpan
   sensors.sort(sensorSort);
   sensorCache = sensors.slice();
 
-  const keep = normId(selectedSensor);
+  // render chips
+  const keep = selectedSensor === 'all' ? 'ALL' : normId(selectedSensor);
   sensorChips.innerHTML =
     `<button class="sensor-pill ${keep==='ALL'?'active':''}" data-sid="all">All</button>` +
-    sensors.map(s => `<button class="sensor-pill ${keep===normId(s.id)?'active':''}" data-sid="${normId(s.id)}">${s.name}</button>`).join('');
+    sensors.map(s => {
+      const sid = normId(s.id);
+      return `<button class="sensor-pill ${keep===sid?'active':''}" data-sid="${sid}">${s.name}</button>`;
+    }).join('');
 
   sensorChips.querySelectorAll('.sensor-pill').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       sensorChips.querySelectorAll('.sensor-pill').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       const sid = btn.dataset.sid || 'all';
-      selectedSensor = sid === 'all' ? 'all' : normId(sid);
+      selectedSensor = sid === 'all' ? 'all' : normId(sid);   // <-- selalu huruf
       localStorage.setItem('tapeflow_sensor', selectedSensor);
       loadMeasurements();
     });
   });
 
+  // restore pilihan sebelumnya
   const saved = localStorage.getItem('tapeflow_sensor');
   if (saved && (saved.toLowerCase() === 'all' || sensors.some(s => normId(s.id) === normId(saved)))) {
     selectedSensor = saved.toLowerCase() === 'all' ? 'all' : normId(saved);
@@ -336,6 +359,7 @@ async function loadMeasurements(){
     let tableRows = [];
 
     if (Array.isArray(js.series)) {
+      // sort seri A,B,C...
       const sortedSeries = js.series.slice().sort((a, b) =>
         sensorSort({ id: normId(a.id), name: a.name }, { id: normId(b.id), name: b.name })
       );
